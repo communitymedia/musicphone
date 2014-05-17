@@ -28,7 +28,7 @@ import android.graphics.Bitmap;
 
 public class MediaPhone {
 
-	public static final String APPLICATION_NAME = "mediaphone"; // *must* match provider in AndroidManifest.xml
+	public static final String APPLICATION_NAME = "musicphone"; // *must* match provider in AndroidManifest.xml
 	public static final boolean DEBUG = false; // note: must add android.permission.INTERNET for ViewServer debugging
 
 	// file extensions for our own media items (imported media may differ) - *not* including the dot

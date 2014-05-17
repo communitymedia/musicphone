@@ -20,7 +20,7 @@
 
 package ac.robinson.mediaphone.view;
 
-import ac.robinson.mediaphone.R;
+import ac.robinson.musicphone.R;
 import android.content.Context;
 import android.util.AttributeSet;
 import android.view.MotionEvent;

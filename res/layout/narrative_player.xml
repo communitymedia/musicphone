@@ -14,7 +14,7 @@
         android:background="@color/playback_background"
         android:contentDescription="@string/frame_image_description"
         android:onClick="handleButtonClicks"
-        android:scaleType="centerInside"
+        android:scaleType="matrix"
         android:src="@null" />
 
     <ac.robinson.view.AutoResizeTextView

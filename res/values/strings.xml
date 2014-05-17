@@ -5,7 +5,7 @@
 
 
     <!-- application properties -->
-    <string name="app_name">Com-Phone</string>
+    <string name="app_name">Com-Note</string>
 
     <!-- temporary features -->
     <string name="html_feature_coming_soon">Coming soon — HTML import</string>
@@ -19,6 +19,11 @@
     <string name="zero_length_audio">0:00.0</string>
 
     <!-- background tasks -->
+    <string name="dropbox_download">Starting to download files from Dropbox</string>
+    <string name="error_dropbox_download">Please choose the Dropbox folder which you want to download from before downloading</string>
+    <string name="error_link_dropbox">Please link to your Dropbox</string>
+    <string name="list_dropbox_folders">List all Dropbox folders, please wait…</string>
+    <string name="download_finished">All files have been downloaded</string>
     <string name="background_task_progress">Please wait…</string>
     <string name="import_starting">Starting to process imported files…</string>
     <string name="import_file_confirmation">Import file</string>
@@ -99,6 +104,7 @@
     <string name="delete_audio_succeeded">The sound has been deleted</string>
     <string name="split_audio_add_content">Please record audio before creating a new frame</string>
     <string name="retake_audio_forbidden">Sorry, this audio is in a format that cannot be edited. To replace it, please delete the current recording first</string>
+    <string name="error_plugin_headphone">Please plug in your headphones</string>
 
     <!-- frame editor -->
     <string name="error_loading_frame_editor">Error loading frame editor – please try again</string>
@@ -124,6 +130,7 @@
     <!-- file errors -->
     <string name="error_opening_narrative_content_sd">Error: unable to find your narratives. Please check that the SD card is available</string>
     <string name="error_opening_narrative_content">Error: unable to find your narratives</string>
+    <string name="error_no_image_to_print">Unfortunately, there is no image to print</string>
 
     <!-- narrative browser -->
     <string name="narrative_list_header">My Narratives</string>
@@ -135,9 +142,11 @@
     <string name="narrative_list_empty">Press the + button above to get started&#160;&#160;&#160;&#x21E7;</string>
     <string name="narrative_folder_not_found">Error: couldn\'t find the folder to import narratives from – please set the import directory in settings</string>
     <string name="narrative_import_not_found">No narratives found to import – all files from a SMIL export should be placed in the import directory selected in settings (currently %1$s)</string>
+    <string name="error_link_to_dropbox">Link to Dropbox failed or was cancelled.</string>
+    <string name="drop_link_done">The sharing folder has been created at Dropbox/Com-Note-Sharing.</string>
 
     <!-- helper narrative -->
-    <string name="helper_narrative_frame_1">Welcome to\n%1$s!\n\nTouch to edit,\nlong press to play</string>
+    <string name="helper_narrative_frame_1">Welcome to\n%1$s!\n\nLong press to play \n the helper narrative</string>
     <string name="helper_narrative_frame_2">Editing: add pictures, sounds or text</string>
     <string name="helper_narrative_frame_3">Playback: view or export your narrative</string>
     <string name="helper_narrative_frame_4">Enjoy!\n\nWe\'d love to hear how you get on – you can send feedback via \"%1$s\" in %2$s</string>
@@ -152,6 +161,8 @@
     <string name="title_save_locally">Save to SD card</string>
     <string name="title_preferences">Settings</string>
     <string name="title_select_import_directory">Select the import directory</string>
+    <string name="printThis">Printing...</string>
+    <string name="dropbox_spinner">Dropbox folder chooser</string>
 
     <!-- preferences -->
     <string name="preferences_editing">Editing</string>
@@ -216,7 +227,10 @@
 
     <!-- menu items -->
     <string name="menu_new_narrative">New narrative</string>
-    <string name="menu_scan_imports">Scan and import</string>
+    <string name="menu_dropbox_setup">Link to Dropbox account</string>
+    <string name="choose_dropbox_folder">Choose Dropbox folder</string>
+    <string name="menu_scan_imports_dropbox">Download via Dropbox</string>
+    <string name="menu_scan_imports">Scan for new narrative</string>
     <string name="menu_make_template">Make template</string>
     <string name="menu_delete_narrative">Delete narrative</string>
     <string name="menu_previous_frame">Previous frame</string>
@@ -227,5 +241,6 @@
     <string name="menu_play_narrative">Play / export</string>
     <string name="menu_export">Export</string>
     <string name="menu_preferences">@string/title_preferences</string>
+    <string name="print_image">Print this image</string>
 
 </resources>

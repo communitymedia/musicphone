@@ -1,22 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
-    package="ac.robinson.mediaphone"
+    package="ac.robinson.musicphone"
     android:installLocation="auto"
-    android:versionCode="20"
-    android:versionName="1.3.5" >
+    android:versionCode="1"
+    android:versionName="1.0" >
 
     <uses-sdk
         android:minSdkVersion="8"
         android:targetSdkVersion="17" />
 
-    <!-- internet permission is for Hierarchy Viewer debugging only, and should be disabled for release -->
-    <!-- <uses-permission android:name="android.permission.INTERNET" /> -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <uses-feature
         android:name="android.hardware.bluetooth"
@@ -52,7 +53,7 @@
         android:xlargeScreens="true" />
 
     <application
-        android:name=".MediaPhoneApplication"
+        android:name="ac.robinson.mediaphone.MediaPhoneApplication"
         android:allowBackup="true"
         android:hardwareAccelerated="true"
         android:icon="@drawable/ic_launcher"
@@ -60,7 +61,7 @@
         android:logo="@drawable/ic_launcher"
         android:theme="@style/default_dark_theme" >
         <activity
-            android:name=".activity.NarrativeBrowserActivity"
+            android:name="ac.robinson.mediaphone.activity.NarrativeBrowserActivity"
             android:label="@string/app_name" >
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -69,43 +70,63 @@
             </intent-filter>
         </activity>
         <activity
-            android:name=".activity.TemplateBrowserActivity"
+            android:name="com.dropbox.client2.android.AuthActivity"
+            android:configChanges="orientation|keyboard"
+            android:launchMode="singleTask" >
+            <intent-filter>
+                <data android:scheme="db-3pt5guogiu3j6og" /> <!-- app key -->
+
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.BROWSABLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name="ac.robinson.mediaphone.activity.DropboxSpinnerActivity"
+            android:label="@string/dropbox_spinner" />
+        <activity
+            android:name="ac.robinson.mediaphone.activity.TemplateBrowserActivity"
             android:label="@string/title_template_browser" />
         <activity
-            android:name=".activity.FrameEditorActivity"
+            android:name="ac.robinson.mediaphone.activity.FrameEditorActivity"
             android:label="@string/title_frame_editor" />
         <activity
-            android:name=".activity.CameraActivity"
+            android:name="ac.robinson.mediaphone.activity.CameraActivity"
             android:label="@string/title_frame_editor"
             android:theme="@style/default_dark_theme" />
         <activity
-            android:name=".activity.AudioActivity"
+            android:name="ac.robinson.mediaphone.activity.AudioActivity"
             android:label="@string/title_frame_editor" />
         <activity
-            android:name=".activity.TextActivity"
+            android:name="ac.robinson.mediaphone.activity.TextActivity"
             android:label="@string/title_frame_editor"
             android:windowSoftInputMode="stateVisible|adjustResize" />
         <activity
-            android:name=".activity.NarrativePlayerActivity"
+            android:name="ac.robinson.mediaphone.activity.NarrativePlayerActivity"
             android:label="@string/title_playback" />
         <activity
-            android:name=".activity.SaveNarrativeActivity"
+            android:name="ac.robinson.mediaphone.activity.SaveNarrativeActivity"
             android:excludeFromRecents="true"
             android:icon="@drawable/ic_launcher_save"
             android:label="@string/title_save_locally"
             android:theme="@style/default_dialog" />
         <activity
-            android:name=".activity.PreferencesActivity"
+            android:name="ac.robinson.mediaphone.activity.PreferencesActivity"
             android:label="@string/title_preferences" />
+        <activity
+            android:name="ac.robinson.mediaphone.activity.PrintDialogActivity"
+            android:label="@string/printThis" />
         <activity
             android:name="ac.robinson.mediautilities.SelectDirectoryActivity"
             android:label="@string/title_select_import_directory"
             tools:ignore="MissingRegistered" />
 
         <provider
-            android:name=".provider.MediaPhoneProvider"
-            android:authorities="mediaphone"
-            android:exported="false" /> <!-- authorities *must* be the same as MediaPhone.APPLICATION_NAME -->
+            android:name="ac.robinson.mediaphone.provider.MediaPhoneProvider"
+            android:authorities="musicphone"
+            android:exported="false" />
+        <!-- authorities *must* be the same as MediaPhone.APPLICATION_NAME -->
 
         <service
             android:name="ac.robinson.service.ImportingService"

@@ -5,7 +5,7 @@ import java.io.File;
 import java.io.FileWriter;
 
 import ac.robinson.mediaphone.MediaPhone;
-import ac.robinson.mediaphone.R;
+import ac.robinson.musicphone.R;
 import ac.robinson.util.BitmapUtilities;
 import ac.robinson.util.DebugUtilities;
 import ac.robinson.util.IOUtilities;

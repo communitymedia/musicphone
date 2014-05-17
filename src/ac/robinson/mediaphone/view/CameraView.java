@@ -26,7 +26,7 @@ import java.util.Comparator;
 import java.util.List;
 
 import ac.robinson.mediaphone.MediaPhone;
-import ac.robinson.mediaphone.R;
+import ac.robinson.musicphone.R;
 import ac.robinson.util.DebugUtilities;
 import ac.robinson.util.UIUtilities;
 import android.content.Context;

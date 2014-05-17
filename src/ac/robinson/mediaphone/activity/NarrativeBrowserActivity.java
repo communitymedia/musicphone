@@ -21,13 +21,16 @@
 package ac.robinson.mediaphone.activity;
 
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 
 import ac.robinson.mediaphone.BrowserActivity;
 import ac.robinson.mediaphone.MediaPhone;
 import ac.robinson.mediaphone.MediaPhoneApplication;
-import ac.robinson.mediaphone.R;
+import ac.robinson.musicphone.R;
 import ac.robinson.mediaphone.provider.FrameAdapter;
 import ac.robinson.mediaphone.provider.FrameItem;
 import ac.robinson.mediaphone.provider.NarrativeAdapter;
@@ -47,6 +50,7 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
+import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -54,6 +58,7 @@ import android.os.Message;
 import android.preference.PreferenceManager;
 import android.support.v4.content.CursorLoader;
 import android.support.v4.content.Loader;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.Menu;
@@ -67,7 +72,33 @@ import android.widget.AdapterView;
 import android.widget.PopupWindow;
 import android.widget.TextView;
 
+import com.dropbox.client2.DropboxAPI;
+import com.dropbox.client2.DropboxAPI.Entry;
+import com.dropbox.client2.android.AndroidAuthSession;
+import com.dropbox.client2.exception.DropboxException;
+import com.dropbox.client2.session.AccessTokenPair;
+import com.dropbox.client2.session.AppKeyPair;
+import com.dropbox.client2.session.Session.AccessType;
+//import com.dropbox.sync.android.DbxAccountManager;
+//import com.dropbox.sync.android.DbxFile;
+//import com.dropbox.sync.android.DbxFileInfo;
+//import com.dropbox.sync.android.DbxFileSystem;
+//import com.dropbox.sync.android.DbxPath;
+
 public class NarrativeBrowserActivity extends BrowserActivity {
+
+	// @Haiyue
+	// APP_KEY and APP_SECRET for full dropbox api
+	private static final String APP_KEY = "3pt5guogiu3j6og";
+	private static final String APP_SECRET = "txljqkae9nhasev";
+
+	// @Haiyue
+	// parameters for dropbox related functions
+	final static private AccessType ACCESS_TYPE = AccessType.DROPBOX;
+	DropboxAPI<AndroidAuthSession> mDBApi;
+	private boolean mDropboxLinked = false;
+	private final String DB_DIR = "/Com-Note-Sync/"; // not in use
+	private boolean mFolderExisted = false;
 
 	private NarrativesListView mNarratives;
 	private NarrativeAdapter mNarrativeAdapter;
@@ -90,7 +121,13 @@ public class NarrativeBrowserActivity extends BrowserActivity {
 
 	private View mFrameAdapterEmptyView = null;
 
+	private boolean mFinishDownload = false;
 	private boolean mScanningForNarratives;
+	private int volume1, volume2, volume3;
+
+	private downloadWholeFolder mdownloadWholeFolder;
+	private List<String> strLst = null;
+	String[] fnames = null;
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -113,6 +150,11 @@ public class NarrativeBrowserActivity extends BrowserActivity {
 		}
 
 		initialiseNarrativesView();
+		// @Haiyue
+		// Dropbox manager
+		AppKeyPair appKeys = new AppKeyPair(APP_KEY, APP_SECRET);
+		AndroidAuthSession session = new AndroidAuthSession(appKeys, ACCESS_TYPE);
+		mDBApi = new DropboxAPI<AndroidAuthSession>(session);
 	}
 
 	@Override
@@ -147,6 +189,15 @@ public class NarrativeBrowserActivity extends BrowserActivity {
 		mCurrentSelectedNarrativeId = null;
 
 		postDelayedUpdateNarrativeIcons(); // in case any icons were in the process of loading when we rotated
+		if (mDBApi.getSession().authenticationSuccessful()) {
+			try {
+				// Required to complete auth, sets the access token on the session
+				mDBApi.getSession().finishAuthentication();
+				AccessTokenPair tokens = mDBApi.getSession().getAccessTokenPair();
+			} catch (IllegalStateException e) {
+				Log.i("DbAuthLog", "Error authenticating", e);
+			}
+		}
 	}
 
 	@Override
@@ -196,9 +247,175 @@ public class NarrativeBrowserActivity extends BrowserActivity {
 			case R.id.menu_scan_imports:
 				importNarratives();
 				return true;
+				// @Haiyue
+				// choose dropbox folder
+			case R.id.choose_dropbox_folder:
+				if (mDropboxLinked == true) {
+					UIUtilities.showToast(NarrativeBrowserActivity.this, R.string.list_dropbox_folders);
+					testSpinner();
+				} else if (mDropboxLinked == false) {
+					UIUtilities.showToast(NarrativeBrowserActivity.this, R.string.error_link_dropbox);
+				}
+				return true;
+				// @Haiyue
+				// choose to link to dropbox account
+			case R.id.menu_dropbox_setup:
+				onClickSetupDropbox();
+				return true;
+				// @Haiyue
+				// download from chosen dropbox folder
+			case R.id.menu_scan_imports_dropbox:
+				if (DropboxSpinnerActivity.DropBoxDirectory == null) {
+					UIUtilities.showToast(NarrativeBrowserActivity.this, R.string.error_dropbox_download);
+				} else if (DropboxSpinnerActivity.DropBoxDirectory != null) {
+					UIUtilities.showToast(NarrativeBrowserActivity.this, R.string.dropbox_download);
+					// start downloading
+					startDownLoadWholeFolder();
+				}
+				return true;
 			default:
 				return super.onOptionsItemSelected(item);
 		}
+	}
+
+	private void testSpinner() {
+		// @Haiyue
+		// list all names of folders from dropbox
+		GetDropboxFolderName task = new GetDropboxFolderName();
+		task.execute();
+	}
+
+	private void dropboxSpinner(String[] fnames) {
+		final Intent dropboxSpinnerIntent = new Intent(NarrativeBrowserActivity.this, DropboxSpinnerActivity.class);
+		dropboxSpinnerIntent.putExtra("folder_name", fnames);
+		startActivity(dropboxSpinnerIntent);
+	}
+
+	private class GetDropboxFolderName extends AsyncTask<String, Void, String[]> {
+		protected String[] doInBackground(String... params) {
+			try {
+				Entry entries = mDBApi.metadata("/", 0, null, true, null);
+				ArrayList<Entry> files = new ArrayList<Entry>();
+				ArrayList<String> dir = new ArrayList<String>();
+				int i = 0;
+				for (Entry ent : entries.contents) {
+					if (!ent.isDeleted) {
+						// Log.i("Is Folder",String.valueOf(ent.fileName()));
+						if (ent.isDir) {
+							// Log.i("Is Folder",String.valueOf(ent.fileName()));
+							files.add(ent);
+							dir.add(new String(files.get(i++).path));
+							fnames = dir.toArray(new String[dir.size()]);
+						}
+					}
+				}
+				i = 0;
+			} catch (DropboxException e3) {
+				// TODO Auto-generated catch block
+				e3.printStackTrace();
+			}
+			return fnames;
+		}
+
+		protected void onPostExecute(String[] fnames) {
+			dropboxSpinner(fnames);
+		}
+	}
+
+	private void startDownLoadWholeFolder() {
+		mdownloadWholeFolder = new downloadWholeFolder();
+		mdownloadWholeFolder.execute();
+		// new downloadWholeFolder().execute();
+		// mdownloadWholeFolder.onPostExecute();
+	}
+
+	private class downloadWholeFolder extends AsyncTask<Boolean, Void, Boolean> {
+		@Override
+		protected Boolean doInBackground(Boolean... params) {
+			String local = "/" + MediaPhone.IMPORT_DIRECTORY + "/";
+			// String server = DB_DIR;
+			String server = DropboxSpinnerActivity.DropBoxDirectory + "/";
+			try {
+				Entry entries = mDBApi.metadata(server, 0, null, true, null);
+				for (Entry e : entries.contents) {
+					if (!e.isDeleted) {
+						// Log.i("Is Folder",String.valueOf(e.isDir));
+						if (!e.isDir) {
+							Log.i("file name ", String.valueOf(e.fileName()));
+							String fileName = String.valueOf(e.fileName());
+							String targetfilePath = local + fileName;
+							String serverfilePath = server + fileName;
+
+							File target = new File(targetfilePath);
+							FileOutputStream mFos = null;
+							try {
+								mFos = new FileOutputStream(target);
+							} catch (FileNotFoundException e1) {
+								// mErrorMsg = "Couldn't create a local file to store the image";
+								return false;
+							}
+							try {
+								mDBApi.getFile(serverfilePath, null, mFos, null);
+							} catch (DropboxException e2) {
+								// TODO Auto-generated catch block
+								e2.printStackTrace();
+							}
+						}
+					}
+				}
+			} catch (DropboxException e3) {
+				// TODO Auto-generated catch block
+				e3.printStackTrace();
+			}
+			mFinishDownload = true;
+			return mFinishDownload;
+		}
+
+		protected void onPostExecute(Boolean mFinishDownload) {
+			if (mFinishDownload == true)
+				UIUtilities.showToast(NarrativeBrowserActivity.this, R.string.download_finished);
+		}
+	}
+
+	// @Haiyue
+	// not in use
+	private void createFolder() {
+		new createDB_Folder().execute();
+		// new createDB_Folder().onPostExecute();
+	}
+
+	// @Haiyue
+	// not in use
+	private class createDB_Folder extends AsyncTask {
+
+		@Override
+		protected Object doInBackground(Object... params) {
+			try {
+				Entry folder = mDBApi.metadata("/", 0, null, true, null);
+				List<Entry> CFolder = folder.contents;
+
+				for (Entry entry : CFolder) {
+					if (entry.fileName() == DB_DIR) {
+						mFolderExisted = true;
+					}
+				}
+				if (mFolderExisted == false) {
+					mDBApi.createFolder(DB_DIR);
+				}
+				if (mFolderExisted == true) {
+					UIUtilities.showToast(NarrativeBrowserActivity.this, R.string.drop_link_done);
+				}
+			} catch (DropboxException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+			return null;
+		}
+	}
+
+	private void onClickSetupDropbox() {
+		mDBApi.getSession().startAuthentication(NarrativeBrowserActivity.this);
+		mDropboxLinked = true;
 	}
 
 	@Override
@@ -577,6 +794,10 @@ public class NarrativeBrowserActivity extends BrowserActivity {
 				} else if (insertNewFrameBefore != 0) {
 					insertFrame(mCurrentSelectedNarrativeId, holder.frameInternalId);
 				} else {
+					// compare if the chosen narrative is the helper narrative
+					if (holder.frameParentId.equals(NarrativeItem.HELPER_NARRATIVE_ID)) {
+						return;
+					}
 					editFrame(holder.frameInternalId);
 				}
 			}

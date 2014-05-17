@@ -25,7 +25,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 
 import ac.robinson.mediaphone.MediaPhone;
-import ac.robinson.mediaphone.R;
+import ac.robinson.musicphone.R;
 import ac.robinson.util.BitmapUtilities;
 import ac.robinson.util.IOUtilities;
 import ac.robinson.util.ImageCacheUtilities;

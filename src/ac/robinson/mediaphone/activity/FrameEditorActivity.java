@@ -26,7 +26,7 @@ import java.util.Map.Entry;
 
 import ac.robinson.mediaphone.MediaPhone;
 import ac.robinson.mediaphone.MediaPhoneActivity;
-import ac.robinson.mediaphone.R;
+import ac.robinson.musicphone.R;
 import ac.robinson.mediaphone.provider.FrameItem;
 import ac.robinson.mediaphone.provider.FramesManager;
 import ac.robinson.mediaphone.provider.MediaItem;
@@ -42,21 +42,27 @@ import ac.robinson.view.CenteredImageTextButton;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ContentResolver;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.SharedPreferences.Editor;
 import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.graphics.drawable.BitmapDrawable;
+import android.media.AudioManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
+import android.widget.SeekBar;
+import android.widget.SeekBar.OnSeekBarChangeListener;
 
-public class FrameEditorActivity extends MediaPhoneActivity {
+public class FrameEditorActivity extends MediaPhoneActivity implements OnSeekBarChangeListener {
 
 	// not in MediaPhone.java because it needs more than just this to add more audio items (layouts need updating too)
 	private final int MAX_AUDIO_ITEMS = 3;
@@ -67,11 +73,30 @@ public class FrameEditorActivity extends MediaPhoneActivity {
 	private boolean mAddNewFrame = false;
 	private String mReloadImagePath = null;
 	private boolean mDeleteFrameOnExit = false;
-
 	private LinkedHashMap<String, Integer> mFrameAudioItems = new LinkedHashMap<String, Integer>();
+
+	// private SeekBar[] sliders;
+	private SeekBar audio1Progress, audio2Progress, audio3Progress;
+	private SeekBar[] audioProgress;
+	private AudioManager mAudioMan1;
+	private AudioManager mAudioMan2;
+	private AudioManager mAudioMan3;
+	private int maxVol1, curVol1, maxVol2, curVol2, maxVol3, curVol3;
+	private int volume1, volume2, volume3;
+	private boolean audio1Pressed = false, audio2Pressed = false, audio3Pressed = false;
+	private boolean audio1ButtonVisibility = false, audio2ButtonVisibility = false, audio3ButtonVisibility = false;
+	public static final String VOLUME_SAVE = "volume_save";
+	private boolean mPlayFromFrameEditor = false;
+	private String RECORD_AUDIO1 = "recorded audio 1";
+	private String RECORD_AUDIO2 = "recorded audio 2";
+	private String RECORD_AUDIO3 = "recorded audio 3";
+	private String audio1id, audio2id, audio3id, audio1id_up, audio2id_up, audio3id_up;
+	private boolean audioDeletedneedUpdated = false;
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
+		// @Haiyue
+		// frame editor view has been changed, check the xml layout file
 		super.onCreate(savedInstanceState);
 		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
 			setTheme(R.style.default_light_theme); // light looks *much* better beyond honeycomb
@@ -87,10 +112,40 @@ public class FrameEditorActivity extends MediaPhoneActivity {
 			if (mHasEditedMedia) {
 				setBackButtonIcons(FrameEditorActivity.this, R.id.button_finished_editing, 0, true);
 			}
-		}
 
+		}
+		// @Haiyue
+		// add seek bar
+		audio1Progress = (SeekBar) findViewById(R.id.seekBar1);
+		audio2Progress = (SeekBar) findViewById(R.id.seekBar2);
+		audio3Progress = (SeekBar) findViewById(R.id.seekBar3);
+
+		mAudioMan1 = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+		maxVol1 = mAudioMan1.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+		curVol1 = mAudioMan1.getStreamVolume(AudioManager.STREAM_MUSIC);
+
+		mAudioMan2 = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+		maxVol2 = mAudioMan2.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+		curVol2 = mAudioMan2.getStreamVolume(AudioManager.STREAM_MUSIC);
+
+		mAudioMan3 = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+		maxVol3 = mAudioMan3.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+		curVol3 = mAudioMan3.getStreamVolume(AudioManager.STREAM_MUSIC);
+
+		audio1Progress.setMax(maxVol1);
+		audio2Progress.setMax(maxVol2);
+		audio3Progress.setMax(maxVol3);
+
+		audio1Progress.setOnSeekBarChangeListener(this);
+		audio2Progress.setOnSeekBarChangeListener(this);
+		audio3Progress.setOnSeekBarChangeListener(this);
+
+		audio1Pressed = false;
+		audio2Pressed = false;
+		audio3Pressed = false;
 		// load the frame elements themselves
 		loadFrameElements();
+
 	}
 
 	@Override
@@ -129,6 +184,19 @@ public class FrameEditorActivity extends MediaPhoneActivity {
 
 	@Override
 	public void onBackPressed() {
+
+		audio1Pressed = false;
+		audio2Pressed = false;
+		audio3Pressed = false;
+		// @Haiyue
+		// save volume information after pressing back button
+		SharedPreferences inputPrefs = getSharedPreferences(mFrameInternalId, 0);
+		Editor editor = inputPrefs.edit();
+		editor.putInt("volume1", volume1);
+		editor.putInt("volume2", volume2);
+		editor.putInt("volume3", volume3);
+		editor.commit();
+
 		// managed to press back before loading the frame - wait
 		if (mFrameInternalId == null) {
 			return;
@@ -189,6 +257,7 @@ public class FrameEditorActivity extends MediaPhoneActivity {
 		}
 
 		setResult(Activity.RESULT_OK);
+		mPlayFromFrameEditor = false;
 		super.onBackPressed();
 	}
 
@@ -226,6 +295,19 @@ public class FrameEditorActivity extends MediaPhoneActivity {
 				if (MediaManager.countMediaByParentId(getContentResolver(), mFrameInternalId) > 0) {
 					final Intent framePlayerIntent = new Intent(FrameEditorActivity.this, NarrativePlayerActivity.class);
 					framePlayerIntent.putExtra(getString(R.string.extra_internal_id), mFrameInternalId);
+
+					// @Haiyue
+					// load volume
+					SharedPreferences outputPrefs = getSharedPreferences(mFrameInternalId, 0);
+					volume1 = outputPrefs.getInt("volume1", -1);
+					volume2 = outputPrefs.getInt("volume2", -1);
+					volume3 = outputPrefs.getInt("volume3", -1);
+
+					framePlayerIntent.putExtra("Current Volume1 From FrameEditor", volume1);
+					framePlayerIntent.putExtra("Current Volume2 From FrameEditor", volume2);
+					framePlayerIntent.putExtra("Current Volume3 From FrameEditor", volume3);
+					mPlayFromFrameEditor = true;
+					framePlayerIntent.putExtra("Play from editor", mPlayFromFrameEditor);
 					startActivityForResult(framePlayerIntent, MediaPhone.R_id_intent_narrative_player);
 				} else {
 					UIUtilities.showToast(FrameEditorActivity.this, R.string.play_narrative_add_content);
@@ -291,6 +373,7 @@ public class FrameEditorActivity extends MediaPhoneActivity {
 	}
 
 	private void loadFrameElements() {
+
 		mAddNewFrame = false;
 		if (mFrameInternalId == null) {
 			// editing an existing frame
@@ -309,6 +392,7 @@ public class FrameEditorActivity extends MediaPhoneActivity {
 		// reset interface
 		mReloadImagePath = null;
 		mFrameAudioItems.clear();
+
 		((CenteredImageTextButton) findViewById(R.id.button_take_picture_video))
 				.setCompoundDrawablesWithIntrinsicBounds(0, android.R.drawable.ic_menu_camera, 0, 0);
 		// (audio buttons are loaded/reset after audio files are loaded)
@@ -348,6 +432,7 @@ public class FrameEditorActivity extends MediaPhoneActivity {
 
 		// update the interface (image is loaded in onWindowFocusChanged so we know the button's size)
 		reloadAudioButtons();
+
 	}
 
 	private void addNewFrame() {
@@ -430,6 +515,7 @@ public class FrameEditorActivity extends MediaPhoneActivity {
 		FrameItem thisFrame = FramesManager.findFrameByInternalId(contentResolver, mFrameInternalId);
 		thisFrame.setNarrativeSequenceId(narrativeSequenceId);
 		FramesManager.updateFrame(contentResolver, thisFrame);
+
 	}
 
 	private void reloadAudioButtons() {
@@ -443,22 +529,84 @@ public class FrameEditorActivity extends MediaPhoneActivity {
 		for (Entry<String, Integer> audioMedia : mFrameAudioItems.entrySet()) {
 			audioButtons[audioIndex].setText(StringUtilities.millisecondsToTimeString(audioMedia.getValue(), false));
 			audioIndex += 1;
+			// progressIndex += 1;
 		}
 
+		// @Haiyue
 		// hide unnecessary buttons
-		if (audioIndex < 2) {
+		if (audioIndex == 1) {
 			audioButtons[2].setVisibility(View.GONE);
-			audioButtons[1].setText("");
-			if (audioIndex < 1) {
-				audioButtons[1].setVisibility(View.GONE);
-				audioButtons[0].setText("");
-			} else {
-				audioButtons[1].setVisibility(View.VISIBLE);
-			}
-		} else {
 			audioButtons[1].setVisibility(View.VISIBLE);
+			audioButtons[0].setVisibility(View.VISIBLE);
+			audio3Progress.setVisibility(View.GONE);
+			audio2Progress.setVisibility(View.GONE);
+			audio1Progress.setVisibility(View.VISIBLE);
+			audio1ButtonVisibility = true;
+			audio2ButtonVisibility = false;
+			audio3ButtonVisibility = false;
+			audioButtons[1].setText("");
+		} else if (audioIndex == 2) {
 			audioButtons[2].setVisibility(View.VISIBLE);
+			audioButtons[1].setVisibility(View.VISIBLE);
+			audioButtons[0].setVisibility(View.VISIBLE);
+			audioButtons[2].setText("");
+			audio3Progress.setVisibility(View.GONE);
+			audio2Progress.setVisibility(View.VISIBLE);
+			audio1Progress.setVisibility(View.VISIBLE);
+			audio1ButtonVisibility = true;
+			audio2ButtonVisibility = true;
+			audio3ButtonVisibility = false;
+		} else if (audioIndex == 3) {
+			audio3Progress.setVisibility(View.VISIBLE);
+			audio2Progress.setVisibility(View.VISIBLE);
+			audio1Progress.setVisibility(View.VISIBLE);
+			audioButtons[2].setVisibility(View.VISIBLE);
+			audioButtons[1].setVisibility(View.VISIBLE);
+			audioButtons[0].setVisibility(View.VISIBLE);
+			audio1ButtonVisibility = true;
+			audio2ButtonVisibility = true;
+			audio3ButtonVisibility = true;
+		} else if (audioIndex == 0) {
+			audio3Progress.setVisibility(View.GONE);
+			audio2Progress.setVisibility(View.GONE);
+			audio1Progress.setVisibility(View.GONE);
+			audioButtons[2].setVisibility(View.GONE);
+			audioButtons[1].setVisibility(View.GONE);
+			audioButtons[0].setVisibility(View.VISIBLE);
+			audioButtons[0].setText("");
+			audio1ButtonVisibility = false;
+			audio2ButtonVisibility = false;
+			audio3ButtonVisibility = false;
 		}
+
+		// @Haiyue
+		// load volume
+		SharedPreferences outputPrefs = getSharedPreferences(mFrameInternalId, 0);
+		if (mFrameInternalId != null)
+			Log.d("input frame id ", mFrameInternalId);
+		volume1 = outputPrefs.getInt("volume1", 0);
+		volume2 = outputPrefs.getInt("volume2", 0);
+		volume3 = outputPrefs.getInt("volume3", 0);
+		audio1id_up = outputPrefs.getString("upaudio1", null);
+		audio2id_up = outputPrefs.getString("upaudio2", null);
+		audio3id_up = outputPrefs.getString("upaudio3", null);
+		audioDeletedneedUpdated = outputPrefs.getBoolean("audioDeleted", false);
+		Log.d("string delete", String.valueOf(audioDeletedneedUpdated));
+		if (audioDeletedneedUpdated) {
+			SharedPreferences inputPrefs = getSharedPreferences(mFrameInternalId, 0);
+			Editor editor = inputPrefs.edit();
+			editor.putString("curaudio1", audio1id_up);
+			editor.putString("curaudio2", audio2id_up);
+			editor.putString("curaudio3", audio3id_up);
+			editor.commit();
+		}
+		audioDeletedneedUpdated = false;
+
+		// @Haiyue
+		// set volume bar progress using the loaded volume information
+		audio1Progress.setProgress(volume1);
+		audio2Progress.setProgress(volume2);
+		audio3Progress.setProgress(volume3);
 	}
 
 	private void reloadFrameImage(String imagePath) {
@@ -518,6 +666,10 @@ public class FrameEditorActivity extends MediaPhoneActivity {
 	}
 
 	public void handleButtonClicks(View currentButton) {
+		audio1Pressed = false;
+		audio2Pressed = false;
+		audio3Pressed = false;
+
 		if (!verifyButtonClick(currentButton)) {
 			return;
 		}
@@ -534,21 +686,83 @@ public class FrameEditorActivity extends MediaPhoneActivity {
 				startActivityForResult(takePictureIntent, MediaPhone.R_id_intent_picture_editor);
 				break;
 
+			// @Haiyue
+			// press allocated button to record
 			case R.id.button_record_audio_1:
 			case R.id.button_record_audio_2:
 			case R.id.button_record_audio_3:
+				SharedPreferences sh = getSharedPreferences(mFrameInternalId, 0);
 				final Intent recordAudioIntent = new Intent(FrameEditorActivity.this, AudioActivity.class);
 				recordAudioIntent.putExtra(getString(R.string.extra_parent_id), mFrameInternalId);
+
 				int selectedAudioIndex = getAudioIndex(buttonId);
 				int currentIndex = 0;
 				for (String audioMediaId : mFrameAudioItems.keySet()) {
+
+					if (audio1ButtonVisibility == true && audio2ButtonVisibility == false
+							&& audio3ButtonVisibility == false)
+						audio1id = audioMediaId;
+
+					if (audio1ButtonVisibility == true && audio2ButtonVisibility == true
+							&& audio3ButtonVisibility == false) {
+						audio1id = sh.getString("curaudio1", null);
+						audio2id = audioMediaId;
+					}
+					if (audio1ButtonVisibility == true && audio2ButtonVisibility == true
+							&& audio3ButtonVisibility == true) {
+						audio1id = sh.getString("curaudio1", null);
+						audio2id = sh.getString("curaudio2", null);
+						audio3id = audioMediaId;
+					}
 					if (currentIndex == selectedAudioIndex) {
 						recordAudioIntent.putExtra(getString(R.string.extra_internal_id), audioMediaId);
+						// @Haiyue
+						// set volume for preview playback
+						if (selectedAudioIndex == 0) {
+							mAudioMan1.setStreamVolume(AudioManager.STREAM_MUSIC, volume1, 0);
+							audio1Pressed = true;
+							audio1id = audioMediaId;
+
+						}
+						if (selectedAudioIndex == 1) {
+							mAudioMan2.setStreamVolume(AudioManager.STREAM_MUSIC, volume2, 0);
+							audio2Pressed = true;
+							audio2id = audioMediaId;
+						}
+						if (selectedAudioIndex == 2) {
+							mAudioMan3.setStreamVolume(AudioManager.STREAM_MUSIC, volume3, 0);
+							audio3Pressed = true;
+							audio3id = audioMediaId;
+						}
 						break;
 					}
 					currentIndex += 1;
 				}
+
+				recordAudioIntent.putExtra("volume1", volume1);
+				recordAudioIntent.putExtra("volume2", volume2);
+				recordAudioIntent.putExtra("volume3", volume3);
+
+				recordAudioIntent.putExtra("pressAudio1", audio1Pressed);
+				recordAudioIntent.putExtra("pressAudio2", audio2Pressed);
+				recordAudioIntent.putExtra("pressAudio3", audio3Pressed);
+
+				recordAudioIntent.putExtra("buttonAudio1", audio1ButtonVisibility);
+				recordAudioIntent.putExtra("buttonAudio2", audio2ButtonVisibility);
+				recordAudioIntent.putExtra("buttonAudio3", audio3ButtonVisibility);
+
+				recordAudioIntent.putExtra("audio1mediaid", audio1id);
+				recordAudioIntent.putExtra("audio2mediaid", audio2id);
+				recordAudioIntent.putExtra("audio3mediaid", audio3id);
+
+				recordAudioIntent.putExtra("frameID", mFrameInternalId);
 				startActivityForResult(recordAudioIntent, MediaPhone.R_id_intent_audio_editor);
+				SharedPreferences inputPrefs = getSharedPreferences(mFrameInternalId, 0);
+				Editor editor = inputPrefs.edit();
+				editor.putString("curaudio1", audio1id);
+				editor.putString("curaudio2", audio2id);
+				editor.putString("curaudio3", audio3id);
+				editor.commit();
 				break;
 
 			case R.id.button_add_text:
@@ -607,5 +821,37 @@ public class FrameEditorActivity extends MediaPhoneActivity {
 			default:
 				super.onActivityResult(requestCode, resultCode, resultIntent);
 		}
+	}
+
+	@Override
+	public void onProgressChanged(SeekBar arg0, int progress, boolean arg2) {
+
+		// @Haiyue
+		// record set values of volume
+		if (arg0.equals(audio1Progress)) {
+			volume1 = audio1Progress.getProgress();
+		} else if (arg0.equals(audio2Progress)) {
+			volume2 = audio2Progress.getProgress();
+		} else if (arg0.equals(audio3Progress)) {
+			volume3 = audio3Progress.getProgress();
+		}
+		// @Haiyue
+		// save volume information after pressing each audio button
+		SharedPreferences inputPrefs = getSharedPreferences(mFrameInternalId, 0);
+		Editor editor = inputPrefs.edit();
+		editor.putInt("volume1", volume1);
+		editor.putInt("volume2", volume2);
+		editor.putInt("volume3", volume3);
+		editor.commit();
+	}
+
+	@Override
+	public void onStartTrackingTouch(SeekBar arg0) {
+		// TODO Auto-generated method stub
+	}
+
+	@Override
+	public void onStopTrackingTouch(SeekBar arg0) {
+		// TODO Auto-generated method stub
 	}
 }

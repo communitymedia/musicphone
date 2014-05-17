@@ -23,7 +23,7 @@ package ac.robinson.mediaphone.view;
 import java.math.BigDecimal;
 import java.util.Locale;
 
-import ac.robinson.mediaphone.R;
+import ac.robinson.musicphone.R;
 import ac.robinson.util.UIUtilities;
 import android.annotation.SuppressLint;
 import android.content.Context;

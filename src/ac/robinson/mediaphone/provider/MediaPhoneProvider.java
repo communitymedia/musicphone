@@ -24,7 +24,7 @@ import java.io.File;
 import java.util.UUID;
 
 import ac.robinson.mediaphone.MediaPhone;
-import ac.robinson.mediaphone.R;
+import ac.robinson.musicphone.R;
 import ac.robinson.util.DebugUtilities;
 import android.content.ContentProvider;
 import android.content.ContentUris;

@@ -24,7 +24,7 @@ import java.io.File;
 import java.text.SimpleDateFormat;
 
 import ac.robinson.mediaphone.MediaPhone;
-import ac.robinson.mediaphone.R;
+import ac.robinson.musicphone.R;
 import ac.robinson.mediaphone.provider.NarrativeItem;
 import ac.robinson.mediaphone.provider.NarrativesManager;
 import ac.robinson.mediaphone.provider.UpgradeManager;

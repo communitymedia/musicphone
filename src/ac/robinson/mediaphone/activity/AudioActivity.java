@@ -24,13 +24,14 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import ac.robinson.mediaphone.MediaPhone;
 import ac.robinson.mediaphone.MediaPhoneActivity;
-import ac.robinson.mediaphone.R;
+import ac.robinson.musicphone.R;
 import ac.robinson.mediaphone.provider.MediaItem;
 import ac.robinson.mediaphone.provider.MediaManager;
 import ac.robinson.mediaphone.provider.MediaPhoneProvider;
@@ -48,12 +49,15 @@ import android.annotation.TargetApi;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
+import android.content.BroadcastReceiver;
 import android.content.ContentProviderClient;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.SharedPreferences.Editor;
 import android.content.pm.PackageManager;
 import android.content.res.Resources;
 import android.database.Cursor;
@@ -63,6 +67,7 @@ import android.media.MediaPlayer.OnPreparedListener;
 import android.media.MediaRecorder;
 import android.media.MediaRecorder.OnErrorListener;
 import android.media.MediaRecorder.OnInfoListener;
+import android.media.SoundPool;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -116,6 +121,23 @@ public class AudioActivity extends MediaPhoneActivity {
 	// loaded properly from preferences on initialisation
 	private boolean mAddToMediaLibrary = false;
 	private int mAudioBitrate = 8000;
+	private int volume1, volume2, volume3;
+	// @Haiyue
+	private int HEADSET_ON = 0;
+	private HeadsetDetector myDetector;
+	private boolean audio1Pressed = false, audio2Pressed = false, audio3Pressed = false;
+	private boolean audio1ButtonVisibility = false, audio2ButtonVisibility = false, audio3ButtonVisibility = false;
+	private String currentFrameId;
+
+	private ArrayList<Integer> mFrameSounds;
+	private SoundPool mSoundPool;
+	private String audio1id, audio2id, audio3id;
+	public static AudioManager mAudioManager;
+	private MediaPlayer mMediaPlayer1;
+	private MediaPlayer mMediaPlayer2;
+	private boolean audioDeletedneedUpdated = false;
+	private boolean mStopRecording = false;
+	private boolean mRecordingStarted = false;
 
 	private enum DisplayMode {
 		PLAY_AUDIO, RECORD_AUDIO
@@ -129,6 +151,9 @@ public class AudioActivity extends MediaPhoneActivity {
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
+		// @Haiyue
+		// audio view has been changed,
+		// check the xml layout file
 		super.onCreate(savedInstanceState);
 		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
 			setTheme(R.style.default_light_theme); // light looks *much* better beyond honeycomb
@@ -160,6 +185,14 @@ public class AudioActivity extends MediaPhoneActivity {
 
 		// load the media itself
 		loadMediaContainer();
+
+		// @Haiyue
+		mAudioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+		mAudioManager.setSpeakerphoneOn(false);
+		mAudioManager.setMode(AudioManager.MODE_NORMAL);
+		// @Haiyue
+		myDetector = new HeadsetDetector();
+
 	}
 
 	@Override
@@ -212,6 +245,7 @@ public class AudioActivity extends MediaPhoneActivity {
 
 	@Override
 	public void onBackPressed() {
+		mRecordingStarted = false;
 		// managed to press back before loading the media - wait
 		if (mMediaItemInternalId == null) {
 			return;
@@ -231,6 +265,10 @@ public class AudioActivity extends MediaPhoneActivity {
 				case RECORD_AUDIO:
 					if (mAudioRecordingInProgress) {
 						stopRecording(AfterRecordingMode.SWITCH_TO_PLAYBACK); // switch to playback afterwards
+						if (mMediaPlayer1 != null)
+							mMediaPlayer1.pause();
+						if (mMediaPlayer2 != null)
+							mMediaPlayer2.pause(); // afterwards
 						return;
 					} else {
 						// play if they have recorded, exit otherwise
@@ -266,6 +304,9 @@ public class AudioActivity extends MediaPhoneActivity {
 		} else {
 			setResult(mHasEditedMedia ? Activity.RESULT_OK : Activity.RESULT_CANCELED);
 		}
+
+		// @ Unregister receiver
+		unregisterReceiver(myDetector);
 		super.onBackPressed();
 	}
 
@@ -370,8 +411,43 @@ public class AudioActivity extends MediaPhoneActivity {
 			String mediaInternalId = null;
 			final Intent intent = getIntent();
 			if (intent != null) {
+
+				// @Haiyue
+				// load volume information
+				volume1 = intent.getIntExtra("volume1", -1);
+				volume2 = intent.getIntExtra("volume2", -1);
+				volume3 = intent.getIntExtra("volume3", -1);
+
+				// @Haiyue
+				// detect how many tracks have been recorded
+				audio1Pressed = intent.getBooleanExtra("pressAudio1", false);
+				audio2Pressed = intent.getBooleanExtra("pressAudio2", false);
+				audio3Pressed = intent.getBooleanExtra("pressAudio3", false);
+
+				// @Haiyue
+				// detect the visibility of each record button
+				audio1ButtonVisibility = intent.getBooleanExtra("buttonAudio1", false);
+				audio2ButtonVisibility = intent.getBooleanExtra("buttonAudio2", false);
+				audio3ButtonVisibility = intent.getBooleanExtra("buttonAudio3", false);
+
+				// @Haiyue
+				// load audio id
+				currentFrameId = intent.getStringExtra("frameID");
+				SharedPreferences loadAudioItems = getSharedPreferences(currentFrameId, 0);
+				audio1id = loadAudioItems.getString("audio1mediaid", null);
+				audio2id = loadAudioItems.getString("audio2mediaid", null);
+				audio3id = loadAudioItems.getString("audio3mediaid", null);
+				if (audio1id == null)
+					audio1id = intent.getStringExtra("audio1mediaid");
+				if (audio2id == null)
+					audio2id = intent.getStringExtra("audio2mediaid");
+				if (audio3id == null)
+					audio3id = intent.getStringExtra("audio3mediaid");
+				reloadVolumeButton();
+
 				parentInternalId = intent.getStringExtra(getString(R.string.extra_parent_id));
 				mediaInternalId = intent.getStringExtra(getString(R.string.extra_internal_id));
+
 				mShowOptionsMenu = intent.getBooleanExtra(getString(R.string.extra_show_options_menu), false);
 				mSwitchedFrames = intent.getBooleanExtra(getString(R.string.extra_switched_frames), false);
 				if (mSwitchedFrames) {
@@ -414,6 +490,29 @@ public class AudioActivity extends MediaPhoneActivity {
 		} else {
 			UIUtilities.showToast(AudioActivity.this, R.string.error_loading_audio_editor);
 			onBackPressed();
+		}
+	}
+
+	// @Haiyue
+	// update volume progress buttons
+	private void reloadVolumeButton() {
+		CenteredImageTextButton volumeButton1 = (CenteredImageTextButton) findViewById(R.id.button_volume_1);
+		if (volume1 == -1)
+			volumeButton1.setVisibility(View.GONE);
+		else if (volume1 == 0)
+			volumeButton1.setCompoundDrawablesWithIntrinsicBounds(0, R.drawable.ic_volume_off, 0, 0);
+		CenteredImageTextButton volumeButton2 = (CenteredImageTextButton) findViewById(R.id.button_volume_2);
+		if (volume2 == -1) {
+			volumeButton2.setVisibility(View.GONE);
+		} else if (volume2 == 0) {
+			volumeButton2.setCompoundDrawablesWithIntrinsicBounds(0, R.drawable.ic_volume_off, 0, 0);
+		}
+
+		CenteredImageTextButton volumeButton3 = (CenteredImageTextButton) findViewById(R.id.button_volume_3);
+		if (volume3 == -1) {
+			volumeButton3.setVisibility(View.GONE);
+		} else if (volume3 == 0) {
+			volumeButton3.setCompoundDrawablesWithIntrinsicBounds(0, R.drawable.ic_volume_off, 0, 0);
 		}
 	}
 
@@ -570,7 +669,78 @@ public class AudioActivity extends MediaPhoneActivity {
 		return false;
 	}
 
+	private void startPlayback() {
+
+		FileInputStream playerInputStream1 = null;
+		FileInputStream playerInputStream2 = null;
+		ContentResolver contentResolver = getContentResolver();
+		Log.d("test bool", String.valueOf(mRecordingStarted));
+		if (!mStopRecording && !mRecordingStarted) {
+			try {
+				mMediaPlayer1 = new MediaPlayer();
+				mMediaPlayer2 = new MediaPlayer();
+				mMediaPlayer1.setLooping(false);
+				mMediaPlayer2.setLooping(false);
+				boolean activatePlayer2 = false;
+
+				// @Haiyue
+				// decide which recorded sound track is to be played
+				if (audio1ButtonVisibility == true && audio2ButtonVisibility == false
+						&& audio3ButtonVisibility == false) {
+					MediaItem audioMediaItem1 = MediaManager.findMediaByInternalId(contentResolver, audio1id);
+					playerInputStream1 = new FileInputStream(audioMediaItem1.getFile());
+				}
+				if (audio1ButtonVisibility == true && audio2ButtonVisibility == true && audio3ButtonVisibility == false) {
+					activatePlayer2 = true;
+					MediaItem audioMediaItem1 = MediaManager.findMediaByInternalId(contentResolver, audio1id);
+					playerInputStream1 = new FileInputStream(audioMediaItem1.getFile());
+					MediaItem audioMediaItem2 = MediaManager.findMediaByInternalId(contentResolver, audio2id);
+					playerInputStream2 = new FileInputStream(audioMediaItem2.getFile());
+				}
+
+				if (!activatePlayer2) {
+					mMediaPlayer1.setDataSource(playerInputStream1.getFD());
+					mMediaPlayer1.prepare();
+					mMediaPlayer1.start();
+				} else if (activatePlayer2) {
+					float mVolume1 = (float) (1 - (Math.log(15 - volume1) / Math.log(15)));
+					float mVolume2 = (float) (1 - (Math.log(15 - volume2) / Math.log(15)));
+					mMediaPlayer1.setDataSource(playerInputStream1.getFD());
+					mMediaPlayer1.prepare();
+					mMediaPlayer1.start();
+					mMediaPlayer2.setDataSource(playerInputStream2.getFD());
+					mMediaPlayer2.prepare();
+					mMediaPlayer2.start();
+					if (mVolume1 != 0)
+						mMediaPlayer1.setVolume(mVolume1, mVolume1);
+					if (mVolume2 != 0)
+						mMediaPlayer2.setVolume(mVolume2, mVolume2);
+				}
+			} catch (Throwable t) {
+				UIUtilities.showToast(AudioActivity.this, R.string.error_playing_audio);
+			} finally {
+				IOUtilities.closeStream(playerInputStream1);
+				IOUtilities.closeStream(playerInputStream2);
+			}
+		} else if (mStopRecording && mRecordingStarted) {
+			if (mMediaPlayer1 != null) {
+				if (mMediaPlayer1.getDuration() < mAudioDuration)
+					mMediaPlayer1.pause();
+				if (mMediaPlayer1.getDuration() > mAudioDuration)
+					mMediaPlayer1.start();
+			}
+			if (mMediaPlayer2 != null) {
+				if (mMediaPlayer2.getDuration() < mAudioDuration)
+					mMediaPlayer2.pause();
+				if (mMediaPlayer2.getDuration() > mAudioDuration)
+					mMediaPlayer2.start();
+			}
+		}
+		mStopRecording = false;
+	}
+
 	private void startRecording() {
+
 		mHasEditedMedia = true;
 		mAudioRecordingInProgress = true;
 		UIUtilities.acquireKeepScreenOn(getWindow());
@@ -596,8 +766,46 @@ public class AudioActivity extends MediaPhoneActivity {
 		});
 
 		try {
-			mMediaRecorder.start();
-			setBackButtonIcons(AudioActivity.this, R.id.button_finished_audio, R.id.button_cancel_recording, true);
+			// @ Haiyue
+			// recording with headset on
+			if (HEADSET_ON == 1) {
+				mAudioManager.setSpeakerphoneOn(false);
+				if (audio1ButtonVisibility == false && audio2ButtonVisibility == false
+						&& audio3ButtonVisibility == false) {
+					mMediaRecorder.start();
+					setBackButtonIcons(AudioActivity.this, R.id.button_finished_audio, R.id.button_cancel_recording,
+							true);
+				} else if (audio1ButtonVisibility == true && audio2ButtonVisibility == true
+						&& audio3ButtonVisibility == true) {
+					mMediaRecorder.start();
+					setBackButtonIcons(AudioActivity.this, R.id.button_finished_audio, R.id.button_cancel_recording,
+							true);
+				} else {
+					startPlayback();
+					mMediaRecorder.start();
+					setBackButtonIcons(AudioActivity.this, R.id.button_finished_audio, R.id.button_cancel_recording,
+							true);
+				}
+				// @ Haiyue
+				// recording without headset
+			} else if (HEADSET_ON == 0) {
+				mAudioManager.setSpeakerphoneOn(true);
+				if (volume1 == 0 && volume2 == 0 && volume3 == 0) {
+					mMediaRecorder.start();
+					setBackButtonIcons(AudioActivity.this, R.id.button_finished_audio, R.id.button_cancel_recording,
+							true);
+				} else if (volume1 == 0 && volume2 == 0 && volume3 == -1) {
+					mMediaRecorder.start();
+					setBackButtonIcons(AudioActivity.this, R.id.button_finished_audio, R.id.button_cancel_recording,
+							true);
+				} else if (volume1 == 0 && volume2 == -1 && volume3 == -1) {
+					mMediaRecorder.start();
+					setBackButtonIcons(AudioActivity.this, R.id.button_finished_audio, R.id.button_cancel_recording,
+							true);
+				} else if (volume1 != 0 || volume2 != 0 || volume3 != 0) {
+					UIUtilities.showToast(AudioActivity.this, R.string.error_plugin_headphone);
+				}
+			}
 		} catch (Throwable t) {
 			UIUtilities.showToast(AudioActivity.this, R.string.error_recording_audio);
 			if (MediaPhone.DEBUG)
@@ -608,6 +816,8 @@ public class AudioActivity extends MediaPhoneActivity {
 		}
 
 		mTimeRecordingStarted = System.currentTimeMillis();
+		Log.d("test audion duration", String.valueOf(mAudioDuration));
+		updateAudioRecordingText(mAudioDuration);
 		VUMeter vumeter = ((VUMeter) findViewById(R.id.vu_meter));
 		vumeter.setRecorder(mMediaRecorder, new RecordingStartedListener() {
 			@Override
@@ -618,6 +828,8 @@ public class AudioActivity extends MediaPhoneActivity {
 				recordButton.setCompoundDrawablesWithIntrinsicBounds(0, R.drawable.ic_pause, 0, 0);
 			}
 		});
+		mRecordingStarted = true;
+
 	}
 
 	private void stopRecordingTrackers() {
@@ -635,7 +847,11 @@ public class AudioActivity extends MediaPhoneActivity {
 
 	private void stopRecording(final AfterRecordingMode afterRecordingMode) {
 		stopRecordingTrackers();
-
+		if (mMediaPlayer1 != null)
+			mMediaPlayer1.pause();
+		if (mMediaPlayer2 != null)
+			mMediaPlayer2.pause();
+		mStopRecording = true;
 		long audioDuration = System.currentTimeMillis() - mTimeRecordingStarted;
 		try {
 			if (mMediaRecorder.isRecording()) {
@@ -963,6 +1179,7 @@ public class AudioActivity extends MediaPhoneActivity {
 		MediaItem audioMediaItem = MediaManager.findMediaByInternalId(getContentResolver(), mMediaItemInternalId);
 		if (audioMediaItem != null && audioMediaItem.getFile().length() > 0) {
 			FileInputStream playerInputStream = null;
+
 			try {
 				releasePlayer();
 				mMediaPlayer = new MediaPlayer();
@@ -1030,6 +1247,8 @@ public class AudioActivity extends MediaPhoneActivity {
 		public void pause() {
 			if (mMediaPlayer != null) {
 				mMediaPlayer.pause();
+				// mMediaPlayer1.pause();
+				// mMediaPlayer2.pause();
 			}
 		}
 
@@ -1136,6 +1355,65 @@ public class AudioActivity extends MediaPhoneActivity {
 		}
 	}
 
+	// @Haiyue
+	// Update the volume progress
+	// for each recorded sound track
+	public void handleVolumeButton() {
+		// @Haiyue
+		// always delete the first one
+		if (audio1ButtonVisibility == true && audio2ButtonVisibility == true && audio3ButtonVisibility == true) {
+			if (audio1Pressed == true) {
+				volume1 = volume2;
+				volume2 = volume3;
+				volume3 = 0;
+				audio1id = audio2id;
+				audio2id = audio3id;
+				audio3id = null;
+				audio1Pressed = false;
+			} else if (audio2Pressed == true) {
+				volume2 = volume3;
+				volume3 = 0;
+				audio2id = audio3id;
+				audio3id = null;
+				audio2Pressed = false;
+			} else if (audio3Pressed == true) {
+				volume3 = 0;
+				audio3id = null;
+				audio3Pressed = false;
+			}
+			audioDeletedneedUpdated = true;
+		} else if (audio1ButtonVisibility == true && audio2ButtonVisibility == true && audio3ButtonVisibility == false) {
+			if (audio1Pressed == true) {
+				volume1 = volume2;
+				volume2 = 0;
+				audio1Pressed = false;
+			} else if (audio2Pressed == true) {
+				volume2 = 0;
+				audio2Pressed = false;
+			}
+			audioDeletedneedUpdated = true;
+
+		} else if (audio1ButtonVisibility == true && audio2ButtonVisibility == false && audio3ButtonVisibility == false) {
+			if (audio1Pressed == true) {
+				volume1 = 0;
+				audio1Pressed = false;
+			}
+			audioDeletedneedUpdated = true;
+		}
+		// @Haiyue
+		// save volume information for each track
+		SharedPreferences inputPrefs = getSharedPreferences(currentFrameId, 0);
+		Editor editor = inputPrefs.edit();
+		editor.putInt("volume1", volume1);
+		editor.putInt("volume2", volume2);
+		editor.putInt("volume3", volume3);
+		editor.putString("upaudio1", audio1id);
+		editor.putString("upaudio2", audio2id);
+		editor.putString("upaudio3", audio3id);
+		editor.putBoolean("audioDeleted", audioDeletedneedUpdated);
+		editor.commit();
+	}
+
 	public void handleButtonClicks(View currentButton) {
 		if (!verifyButtonClick(currentButton)) {
 			return;
@@ -1183,12 +1461,14 @@ public class AudioActivity extends MediaPhoneActivity {
 						if (audioToDelete != null) {
 							mHasEditedMedia = true;
 							audioToDelete.setDeleted(true);
+							handleVolumeButton();
 							MediaManager.updateMedia(contentResolver, audioToDelete);
 							UIUtilities.showToast(AudioActivity.this, R.string.delete_audio_succeeded);
 							onBackPressed();
 						}
 					}
 				});
+
 				AlertDialog alert = builder.create();
 				alert.show();
 				break;
@@ -1433,5 +1713,23 @@ public class AudioActivity extends MediaPhoneActivity {
 			default:
 				super.onActivityResult(requestCode, resultCode, resultIntent);
 		}
+	}
+
+	// @Haiyue
+	// Headset detector
+	private class HeadsetDetector extends BroadcastReceiver {
+		@Override
+		public void onReceive(Context context, Intent intent) {
+			if (intent.getAction().equals(Intent.ACTION_HEADSET_PLUG)) {
+				HEADSET_ON = intent.getIntExtra("state", -1);
+			}
+		}
+	}
+
+	@Override
+	public void onResume() {
+		IntentFilter filter = new IntentFilter(Intent.ACTION_HEADSET_PLUG);
+		registerReceiver(myDetector, filter);
+		super.onResume();
 	}
 }

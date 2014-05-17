@@ -17,7 +17,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content" >
 
-            <ac.robinson.mediaphone.view.VUMeter
+            <ac.robinson.musicphone.view.VUMeter
                 android:id="@+id/vu_meter"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

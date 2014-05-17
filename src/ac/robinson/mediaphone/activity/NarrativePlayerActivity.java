@@ -22,11 +22,14 @@ package ac.robinson.mediaphone.activity;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 
 import ac.robinson.mediaphone.MediaPhone;
 import ac.robinson.mediaphone.MediaPhoneActivity;
-import ac.robinson.mediaphone.R;
+import ac.robinson.musicphone.R;
+import ac.robinson.mediaphone.addon.CustomMediaController;
 import ac.robinson.mediaphone.provider.FrameItem;
 import ac.robinson.mediaphone.provider.FramesManager;
 import ac.robinson.mediaphone.provider.MediaPhoneProvider;
@@ -38,7 +41,6 @@ import ac.robinson.util.DebugUtilities;
 import ac.robinson.util.IOUtilities;
 import ac.robinson.util.UIUtilities;
 import ac.robinson.view.AutoResizeTextView;
-import ac.robinson.view.CustomMediaController;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
@@ -46,15 +48,19 @@ import android.content.SharedPreferences;
 import android.content.res.AssetFileDescriptor;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
+import android.graphics.Matrix;
+import android.graphics.PointF;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.media.MediaPlayer.OnCompletionListener;
 import android.media.MediaPlayer.OnErrorListener;
 import android.media.MediaPlayer.OnPreparedListener;
 import android.media.SoundPool;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.TextUtils;
+import android.util.FloatMath;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.Menu;
@@ -62,13 +68,34 @@ import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.View.OnTouchListener;
 import android.widget.ImageView;
 import android.widget.ImageView.ScaleType;
 import android.widget.RelativeLayout;
 
 import com.larvalabs.svgandroid.SVGParser;
 
-public class NarrativePlayerActivity extends MediaPhoneActivity {
+//@Haiyue
+//Implements OnTouchListener to enable touch events
+public class NarrativePlayerActivity extends MediaPhoneActivity implements OnTouchListener {
+
+	// @Haiyue
+	// parameters for zoom in/out
+	ImageView photoDisplay;
+	// Matrices used to drag and zoom image
+	Matrix matrix = new Matrix();
+	Matrix savedMatrix = new Matrix();
+	// Three states
+	static final int NONE = 0;
+	static final int DRAG = 1;
+	static final int ZOOM = 2;
+	int mode = NONE;
+	// Points for zooming
+	PointF start = new PointF();
+	PointF mid = new PointF();
+	float oldDist = 1f;
+	int bmpWidth;
+	int bmpHeight;
 
 	private final int EXTRA_AUDIO_ITEMS = 2; // 3 audio items max, but only 2 for sound pool (other is in MediaPlayer)
 	private SoundPool mSoundPool;
@@ -77,11 +104,15 @@ public class NarrativePlayerActivity extends MediaPhoneActivity {
 	private boolean mMediaPlayerPrepared;
 	private boolean mSoundPoolPrepared;
 	private AssetFileDescriptor mSilenceFileDescriptor = null;
+	private AssetFileDescriptor mSilenceFileDescriptor2 = null;
+	private AssetFileDescriptor mSilenceFileDescriptor3 = null;
 	private boolean mSilenceFilePlaying;
 	private long mPlaybackStartTime;
 	private long mPlaybackPauseTime;
 
 	private MediaPlayer mMediaPlayer;
+	private MediaPlayer mMediaPlayer2;
+	private MediaPlayer mMediaPlayer3;
 	private boolean mMediaPlayerError;
 	private boolean mHasPlayed;
 	private boolean mIsLoading;
@@ -95,6 +126,17 @@ public class NarrativePlayerActivity extends MediaPhoneActivity {
 	private Bitmap mAudioPictureBitmap = null;
 
 	private boolean mShowBackButton = false; // loaded from preferences on startup
+
+	private int cVolume1, cVolume2, cVolume3, fVolume1, fVolume2, fVolume3;
+	private float volume1, volume2, volume3;
+	private int mediaIndex, mediaVolume;
+	private boolean mPlayFromFrameEditor = false;
+	private boolean mHasImage = false;
+
+	private String currentAudioItem = null;
+	private String currentAudioItem2 = null;
+	private String currentAudioItem3 = null;
+	private boolean mSilencePlay = false;
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -173,6 +215,7 @@ public class NarrativePlayerActivity extends MediaPhoneActivity {
 				saveLastEditedFrame(mCurrentFrameContainer.mFrameId);
 			}
 		}
+		mPlayFromFrameEditor = false;
 		super.onBackPressed();
 	}
 
@@ -227,11 +270,11 @@ public class NarrativePlayerActivity extends MediaPhoneActivity {
 	}
 
 	private void preparePlayback() {
-		if (mNarrativeContentList != null && mNarrativeContentList.size() > 0 && mMediaPlayer != null
-				&& mSoundPool != null && mMediaController != null && mPlaybackPosition >= 0) {
+		if (mNarrativeContentList != null && mNarrativeContentList.size() > 0 && mMediaPlayer != null // && mSoundPool
+																										// != null
+				&& mMediaController != null && mPlaybackPosition >= 0) {
 			return; // no need to re-initialise
 		}
-
 		// need the parent id
 		final Intent intent = getIntent();
 		if (intent == null) {
@@ -239,11 +282,19 @@ public class NarrativePlayerActivity extends MediaPhoneActivity {
 			onBackPressed();
 			return;
 		}
+		// @Haiyue
+		// (Play narrative from frame editor)
+		// pass volume information for each recorded sound track
+		fVolume1 = intent.getIntExtra("Current Volume1 From FrameEditor", -1);
+		fVolume2 = intent.getIntExtra("Current Volume2 From FrameEditor", -1);
+		fVolume3 = intent.getIntExtra("Current Volume3 From FrameEditor", -1);
+		mPlayFromFrameEditor = intent.getBooleanExtra("Play from editor", false);
 		String startFrameId = intent.getStringExtra(getString(R.string.extra_internal_id));
 
 		// TODO: lazily load (either via AsyncTask/Thread, or ImageCache for low-quality versions, later replaced)
 		ContentResolver contentResolver = getContentResolver();
 		FrameItem currentFrame = FramesManager.findFrameByInternalId(contentResolver, startFrameId);
+
 		NarrativeItem currentNarrative = NarrativesManager.findNarrativeByInternalId(contentResolver,
 				currentFrame.getParentId());
 		mNarrativeContentList = currentNarrative.getContentList(contentResolver);
@@ -275,6 +326,14 @@ public class NarrativePlayerActivity extends MediaPhoneActivity {
 		mSoundPool = new SoundPool(EXTRA_AUDIO_ITEMS, AudioManager.STREAM_MUSIC, 100);
 		mFrameSounds = new ArrayList<Integer>();
 
+		mMediaPlayer2 = new MediaPlayer();
+		mMediaPlayer3 = new MediaPlayer();
+
+		// @Haiyue
+		// Enable Touch
+		photoDisplay = (ImageView) findViewById(R.id.image_playback);
+		photoDisplay.setOnTouchListener(this);
+
 		mMediaController = new TouchCallbackCustomMediaController(this);
 		setMediaControllerListeners();
 
@@ -286,7 +345,6 @@ public class NarrativePlayerActivity extends MediaPhoneActivity {
 		parentLayout.addView(mMediaController, controllerLayout);
 		mMediaController.setAnchorView(findViewById(R.id.image_playback));
 		showMediaController(CustomMediaController.DEFAULT_VISIBILITY_TIMEOUT); // (can use 0 for permanent visibility)
-
 		mHasPlayed = true;
 		prepareMediaItems(mCurrentFrameContainer);
 	}
@@ -343,8 +401,36 @@ public class NarrativePlayerActivity extends MediaPhoneActivity {
 				public void onClick(View v) {
 					onBackPressed();
 				}
-			} : null);
+			} : null, new View.OnClickListener() {
+				@Override
+				public void onClick(View v) {
+					pauseMediaController();
+					// @Haiyue
+					// print using google cloud printer
+					if (mHasImage)
+						printThis();
+					else if (!mHasImage)
+						UIUtilities.showToast(NarrativePlayerActivity.this, R.string.error_no_image_to_print);
+				}
+			});
 		}
+	}
+
+	// @Haiyue
+	// print image via google cloud printer
+	private void printThis() {
+		Intent printIntent = new Intent(this, PrintDialogActivity.class);
+		printIntent.setDataAndType(savePrintedFile(mCurrentFrameContainer.mImagePath), "application/pdf");
+		String timeStamp = new SimpleDateFormat("yyMMdd_HHmm").format(new Date());
+		printIntent.putExtra("title", "Com Note " + timeStamp);
+		startActivity(printIntent);
+	}
+
+	private Uri savePrintedFile(String path) {
+		File mediaFile;
+		mediaFile = new File(path);
+		Uri uri = Uri.fromFile(mediaFile);
+		return uri;
 	}
 
 	private void exportNarrative() {
@@ -374,20 +460,41 @@ public class NarrativePlayerActivity extends MediaPhoneActivity {
 	}
 
 	private void prepareMediaItems(FrameMediaContainer container) {
+
 		// load the audio for the media player
 		Resources res = getResources();
 		mSoundPoolPrepared = false;
 		mMediaPlayerPrepared = false;
 		mMediaPlayerError = false;
 		mNonAudioOffset = 0;
-		unloadSoundPool();
+		// unloadSoundPool();
+
+		// @Haiyue
+		// (Play narrative from narrative browser)
+		// Pass volume information of recorded sounds corresponding to allocated frame internal id
+		SharedPreferences outputPrefs = getSharedPreferences(container.mFrameId, 0);
+		cVolume1 = outputPrefs.getInt("volume1", -1);
+		cVolume2 = outputPrefs.getInt("volume2", -1);
+		cVolume3 = outputPrefs.getInt("volume3", -1);
+
+		if (cVolume1 == -1)
+			cVolume1 = 0;
+		if (cVolume2 == -1)
+			cVolume2 = 0;
+		if (cVolume3 == -1)
+			cVolume3 = 0;
+
 		mSoundPool.setOnLoadCompleteListener(mSoundPoolLoadListener);
 		mNumExtraSounds = 0;
-		String currentAudioItem = null;
+
 		boolean soundPoolAllowed = !DebugUtilities.hasSoundPoolBug();
+
 		for (int i = 0, n = container.mAudioDurations.size(); i < n; i++) {
 			if (container.mAudioDurations.get(i).intValue() == container.mFrameMaxDuration) {
+				// @Haiyue
+				// remember which sound has longest duration for future playback
 				currentAudioItem = container.mAudioPaths.get(i);
+				mediaIndex = i;
 			} else {
 				// playing *anything* in SoundPool at the same time as MediaPlayer crashes on Galaxy Tab
 				if (soundPoolAllowed) {
@@ -396,17 +503,59 @@ public class NarrativePlayerActivity extends MediaPhoneActivity {
 				}
 			}
 		}
+		// @Haiyue
+		// Allocate audio path for each recorded sound track
+		if (mediaIndex == 0) {
+			if (mNumExtraSounds == 2) {
+				currentAudioItem2 = container.mAudioPaths.get(1);
+				currentAudioItem3 = container.mAudioPaths.get(2);
+			} else if (mNumExtraSounds == 1) {
+				currentAudioItem2 = container.mAudioPaths.get(1);
+				currentAudioItem3 = null;
+			} else if (mNumExtraSounds == 0) {
+				currentAudioItem2 = null;
+				currentAudioItem3 = null;
+			}
+		} else if (mediaIndex == 1) {
+			if (mNumExtraSounds == 2) {
+				currentAudioItem2 = container.mAudioPaths.get(0);
+				currentAudioItem3 = container.mAudioPaths.get(2);
+			} else if (mNumExtraSounds == 1) {
+				currentAudioItem2 = container.mAudioPaths.get(0);
+				currentAudioItem3 = null;
+			} else if (mNumExtraSounds == 0) {
+				currentAudioItem2 = null;
+				currentAudioItem3 = null;
+			}
+		} else if (mediaIndex == 2) {
+			if (mNumExtraSounds == 2) {
+				currentAudioItem2 = container.mAudioPaths.get(0);
+				currentAudioItem3 = container.mAudioPaths.get(1);
+			} else if (mNumExtraSounds == 1) {
+				currentAudioItem2 = container.mAudioPaths.get(0);
+				currentAudioItem3 = null;
+			} else if (mNumExtraSounds == 0) {
+				currentAudioItem2 = null;
+				currentAudioItem3 = null;
+			}
+		}
+
 		if (mNumExtraSounds == 0) {
 			mSoundPoolPrepared = true;
 		}
 
 		FileInputStream playerInputStream = null;
+		FileInputStream playerInputStream2 = null;
+		FileInputStream playerInputStream3 = null;
 		mSilenceFilePlaying = false;
 		boolean dataLoaded = false;
 		int dataLoadingErrorCount = 0;
 		while (!dataLoaded && dataLoadingErrorCount <= 2) {
 			try {
 				mMediaPlayer.reset();
+				mMediaPlayer2.reset();
+				mMediaPlayer3.reset();
+
 				if (currentAudioItem == null || (!(new File(currentAudioItem).exists()))) {
 					mSilenceFilePlaying = true;
 					if (mSilenceFileDescriptor == null) {
@@ -419,6 +568,14 @@ public class NarrativePlayerActivity extends MediaPhoneActivity {
 					// stream - original was: mMediaPlayer.setDataSource(currentAudioItem);
 					playerInputStream = new FileInputStream(new File(currentAudioItem));
 					mMediaPlayer.setDataSource(playerInputStream.getFD());
+					if (currentAudioItem2 != null) {
+						playerInputStream2 = new FileInputStream(new File(currentAudioItem2));
+						mMediaPlayer2.setDataSource(playerInputStream2.getFD());
+					}
+					if (currentAudioItem3 != null) {
+						playerInputStream3 = new FileInputStream(new File(currentAudioItem3));
+						mMediaPlayer3.setDataSource(playerInputStream3.getFD());
+					}
 				}
 				dataLoaded = true;
 			} catch (Throwable t) {
@@ -427,6 +584,7 @@ public class NarrativePlayerActivity extends MediaPhoneActivity {
 				dataLoadingErrorCount += 1;
 			} finally {
 				IOUtilities.closeStream(playerInputStream);
+				// IOUtilities.closeStream(playerInputStream2);
 			}
 		}
 
@@ -434,13 +592,28 @@ public class NarrativePlayerActivity extends MediaPhoneActivity {
 			if (dataLoaded) {
 				mMediaPlayer.setLooping(false);
 				mMediaPlayer.setAudioStreamType(AudioManager.STREAM_MUSIC);
+				mMediaPlayer2.setAudioStreamType(AudioManager.STREAM_MUSIC);
+				mMediaPlayer3.setAudioStreamType(AudioManager.STREAM_MUSIC);
 				mMediaPlayer.setOnPreparedListener(mMediaPlayerPreparedListener);
-				// mMediaPlayer.setOnCompletionListener(mMediaPlayerCompletionListener); // done later - better pausing
+				// mMediaPlayer.setOnCompletionListener(mMediaPlayerCompletionListener);
+				// done later - better pausing
 				mMediaPlayer.setOnErrorListener(mMediaPlayerErrorListener);
 				mMediaPlayer.prepareAsync();
+				// @Haiyue
+				// According to the number of recorded sound tracks, prepare corresponding media player
+				switch (mNumExtraSounds) {
+					case 1:
+						mMediaPlayer2.prepareAsync();
+						break;
+					case 2:
+						mMediaPlayer2.prepareAsync();
+						mMediaPlayer3.prepareAsync();
+						break;
+				}
 			} else {
 				throw new IllegalStateException();
 			}
+
 		} catch (Throwable t) {
 			UIUtilities.showToast(NarrativePlayerActivity.this, R.string.error_loading_narrative_player);
 			onBackPressed();
@@ -448,12 +621,16 @@ public class NarrativePlayerActivity extends MediaPhoneActivity {
 		}
 
 		// load the image
-		ImageView photoDisplay = (ImageView) findViewById(R.id.image_playback);
 		if (container.mImagePath != null && new File(container.mImagePath).exists()) {
 			Bitmap scaledBitmap = BitmapUtilities.loadAndCreateScaledBitmap(container.mImagePath,
 					photoDisplay.getWidth(), photoDisplay.getHeight(), BitmapUtilities.ScalingLogic.FIT, true);
+			mHasImage = true;
 			photoDisplay.setImageBitmap(scaledBitmap);
-			photoDisplay.setScaleType(ScaleType.CENTER_INSIDE);
+			// @Haiyue
+			// ScaleType has to be MATRIX, instead of CENTER_INSIDE
+			// Corresponding changes need to be made in layout 'narrative_player.xml'
+			photoDisplay.setScaleType(ScaleType.MATRIX);
+
 		} else if (TextUtils.isEmpty(container.mTextContent)) { // no text and no image: audio icon
 			if (mAudioPictureBitmap == null) {
 				mAudioPictureBitmap = SVGParser.getSVGFromResource(res, R.raw.ic_audio_playback).getBitmap(
@@ -461,8 +638,10 @@ public class NarrativePlayerActivity extends MediaPhoneActivity {
 			}
 			photoDisplay.setImageBitmap(mAudioPictureBitmap);
 			photoDisplay.setScaleType(ScaleType.FIT_CENTER);
+			mHasImage = false;
 		} else {
 			photoDisplay.setImageDrawable(null);
+			mHasImage = false;
 		}
 
 		// load the text
@@ -492,6 +671,104 @@ public class NarrativePlayerActivity extends MediaPhoneActivity {
 			textView.setVisibility(View.VISIBLE);
 		} else {
 			textView.setVisibility(View.GONE);
+		}
+	}
+
+	// @Haiyue
+	// Do the preparation for audio items and audio sync
+	private void prepareAudioItems(String FrameId, Resources res) {
+
+		// String currentAudioItem = null;
+		// String currentAudioItem2 = null;
+		// String currentAudioItem3 = null;
+
+		SharedPreferences outAudioItem = getSharedPreferences(FrameId, 0);
+		currentAudioItem = outAudioItem.getString("audioitem", null);
+		currentAudioItem2 = outAudioItem.getString("audioitem1", null);
+		currentAudioItem3 = outAudioItem.getString("audioitem2", null);
+
+		FileInputStream playerInputStream = null;
+		FileInputStream playerInputStream2 = null;
+		FileInputStream playerInputStream3 = null;
+		mSilenceFilePlaying = false;
+		boolean dataLoaded = false;
+		int dataLoadingErrorCount = 0;
+		mSilencePlay = false;
+		while (!dataLoaded && dataLoadingErrorCount <= 2) {
+			try {
+				mMediaPlayer.reset();
+				mMediaPlayer2.reset();
+				mMediaPlayer3.reset();
+
+				if (currentAudioItem == null || (!(new File(currentAudioItem).exists()))) {
+					Log.d("test", "no audio");
+					mSilenceFilePlaying = true;
+					if (mSilenceFileDescriptor == null) {
+						mSilenceFileDescriptor = res.openRawResourceFd(R.raw.silence_100ms);
+					}
+					mMediaPlayer.setDataSource(mSilenceFileDescriptor.getFileDescriptor(),
+							mSilenceFileDescriptor.getStartOffset(), mSilenceFileDescriptor.getDeclaredLength());
+				} else {
+					// can't play from data directory (they're private; permissions don't work), must use an input
+					// stream - original was: mMediaPlayer.setDataSource(currentAudioItem);
+					Log.d("test", "audio");
+					playerInputStream = new FileInputStream(new File(currentAudioItem));
+					mMediaPlayer.setDataSource(playerInputStream.getFD());
+					if (currentAudioItem2 != null) {
+						playerInputStream2 = new FileInputStream(new File(currentAudioItem2));
+						mMediaPlayer2.setDataSource(playerInputStream2.getFD());
+					}
+					if (currentAudioItem3 != null) {
+						playerInputStream3 = new FileInputStream(new File(currentAudioItem3));
+						mMediaPlayer3.setDataSource(playerInputStream3.getFD());
+					}
+				}
+				dataLoaded = true;
+			} catch (Throwable t) {
+				// sometimes setDataSource fails for mysterious reasons - loop to open it, rather than failing
+				dataLoaded = false;
+				dataLoadingErrorCount += 1;
+			} finally {
+				IOUtilities.closeStream(playerInputStream);
+				// IOUtilities.closeStream(playerInputStream2);
+			}
+		}
+
+		try {
+			if (dataLoaded) {
+				Log.d("start try", "audio");
+				Log.d("number of sounds", String.valueOf(mNumExtraSounds));
+				mMediaPlayer.setLooping(false);
+				mMediaPlayer.setAudioStreamType(AudioManager.STREAM_MUSIC);
+				mMediaPlayer2.setAudioStreamType(AudioManager.STREAM_MUSIC);
+				mMediaPlayer3.setAudioStreamType(AudioManager.STREAM_MUSIC);
+				mMediaPlayer.setOnPreparedListener(mMediaPlayerPreparedListener);
+				// mMediaPlayer.setOnCompletionListener(mMediaPlayerCompletionListener);
+				// done later - better pausing
+				mMediaPlayer.setOnErrorListener(mMediaPlayerErrorListener);
+				mMediaPlayer.prepareAsync();
+				switch (mNumExtraSounds) {
+				// case 0:
+				// mMediaPlayer.prepareAsync();
+				// break;
+					case 1:
+						// mMediaPlayer.prepareAsync();
+						mMediaPlayer2.prepareAsync();
+						break;
+					case 2:
+						// mMediaPlayer.prepareAsync();
+						mMediaPlayer2.prepareAsync();
+						mMediaPlayer3.prepareAsync();
+						break;
+				}
+			} else {
+				throw new IllegalStateException();
+			}
+
+		} catch (Throwable t) {
+			UIUtilities.showToast(NarrativePlayerActivity.this, R.string.error_loading_narrative_player);
+			onBackPressed();
+			return;
 		}
 	}
 
@@ -536,13 +813,20 @@ public class NarrativePlayerActivity extends MediaPhoneActivity {
 				mInitialPlaybackOffset = 0;
 				mNonAudioOffset = 0;
 				mCurrentFrameContainer = getMediaContainer(mPlaybackPosition, true);
+				// @Haiyue
+				// Make sure the image has correct original size each time to replay the narrative.
+				resetZoom();
+
 				prepareMediaItems(mCurrentFrameContainer);
 			} else {
-				if (mMediaPlayer != null && mSoundPool != null) {
+				if (mMediaPlayer != null // && mSoundPool != null
+				) {
 					mMediaPlayer.setOnCompletionListener(mMediaPlayerCompletionListener);
 					mPlaybackStartTime = System.currentTimeMillis() - mMediaPlayer.getCurrentPosition();
 					mMediaPlayer.start();
-					mSoundPool.autoResume(); // TODO: check this works
+					mMediaPlayer2.start();
+					mMediaPlayer3.start();
+					// mSoundPool.autoResume(); // TODO: check this works
 					showMediaController(CustomMediaController.DEFAULT_VISIBILITY_TIMEOUT);
 				} else {
 					UIUtilities.showToast(NarrativePlayerActivity.this, R.string.error_loading_narrative_player);
@@ -563,9 +847,13 @@ public class NarrativePlayerActivity extends MediaPhoneActivity {
 				mMediaPlayer.setOnCompletionListener(null); // make sure we don't continue accidentally
 				mMediaPlayer.pause();
 			}
-			if (mSoundPool != null) {
-				mSoundPool.autoPause(); // TODO: check this works
+			if (mMediaPlayer2 != null) {
+				mMediaPlayer2.pause();
 			}
+			if (mMediaPlayer3 != null) {
+				mMediaPlayer3.pause();
+			}
+
 			showMediaController(-1); // to keep on showing until done here
 			UIUtilities.releaseKeepScreenOn(getWindow());
 		}
@@ -597,27 +885,67 @@ public class NarrativePlayerActivity extends MediaPhoneActivity {
 
 		@Override
 		public void seekTo(int pos) {
-			int actualPos = pos - mPlaybackPosition;
-			if (mPlaybackPosition < 0) { // so we allow seeking from the end
-				mPlaybackPosition = mNarrativeDuration - mCurrentFrameContainer.mFrameMaxDuration;
+
+			if (pos >= 0 && pos < mNarrativeDuration) {
+				FrameMediaContainer newContainer = getMediaContainer(pos, true);
+				if (newContainer != mCurrentFrameContainer) {
+					mCurrentFrameContainer = newContainer;
+
+					prepareMediaItems(mCurrentFrameContainer);
+				}
 			}
-			mPlaybackPauseTime = -1; // we'll be playing after this call
-			if (actualPos >= 0 && actualPos < mCurrentFrameContainer.mFrameMaxDuration) {
-				if (mIsLoading
-						|| (actualPos < mMediaPlayer.getDuration() && mCurrentFrameContainer.mAudioPaths.size() > 0)) {
-					if (!mIsLoading) {
-						if (mMediaController.isDragging()) {
-							mMediaPlayer.setOnCompletionListener(mMediaPlayerCompletionListener);
-						}
-						mPlaybackStartTime = System.currentTimeMillis() - actualPos;
-						mMediaPlayer.seekTo(actualPos); // TODO: seek others (is it even possible with soundpool?)
-						if (!mMediaPlayer.isPlaying()) { // we started from the end
-							mMediaPlayer.start();
-							UIUtilities.acquireKeepScreenOn(getWindow());
-						}
-					} else {
-						// still loading - come here so we don't reload the same item again
-					}
+			// @Haiyue
+			// Seek position for each recorded sound track
+			int actualPos = pos - mPlaybackPosition;
+			if (actualPos <= mMediaPlayer.getDuration()) {
+				if (actualPos == mMediaPlayer.getDuration()) {
+					mMediaPlayer.seekTo(actualPos);
+					mMediaPlayer2.seekTo(actualPos);
+					mMediaPlayer3.seekTo(actualPos);
+					mMediaPlayer.start();
+					mMediaPlayer2.start();
+					mMediaPlayer3.start();
+					mMediaController.setProgress();
+				} else if (actualPos == 0) {
+					mMediaPlayer.seekTo(actualPos);
+					mMediaPlayer2.seekTo(actualPos);
+					mMediaPlayer3.seekTo(actualPos);
+					mMediaPlayer.start();
+					mMediaPlayer2.start();
+					mMediaPlayer3.start();
+					mMediaController.setProgress();
+				} else if (actualPos < mMediaPlayer.getDuration() && actualPos > mMediaPlayer2.getDuration()
+						&& actualPos > mMediaPlayer3.getDuration()) {
+					mMediaPlayer.seekTo(actualPos);
+					mMediaPlayer.start();
+					mMediaPlayer2.pause();
+					mMediaPlayer3.pause();
+					mMediaController.setProgress();
+				} else if (actualPos < mMediaPlayer.getDuration() && actualPos > mMediaPlayer2.getDuration()
+						&& actualPos < mMediaPlayer3.getDuration()) {
+					mMediaPlayer.seekTo(actualPos);
+					mMediaPlayer.start();
+					mMediaPlayer2.pause();
+					mMediaPlayer3.seekTo(actualPos);
+					mMediaPlayer3.start();
+					mMediaController.setProgress();
+				} else if (actualPos < mMediaPlayer.getDuration() && actualPos > mMediaPlayer3.getDuration()
+						&& actualPos < mMediaPlayer2.getDuration()) {
+					mMediaPlayer.seekTo(actualPos);
+					mMediaPlayer.start();
+					mMediaPlayer3.pause();
+					mMediaPlayer2.seekTo(actualPos);
+					mMediaPlayer2.start();
+					mMediaController.setProgress();
+				} else if (actualPos < mMediaPlayer.getDuration() && actualPos < mMediaPlayer3.getDuration()
+						&& actualPos < mMediaPlayer2.getDuration()) {
+					mMediaPlayer.seekTo(actualPos);
+					mMediaPlayer.start();
+					mMediaPlayer2.seekTo(actualPos);
+					mMediaPlayer2.start();
+					mMediaPlayer3.seekTo(actualPos);
+					mMediaPlayer3.start();
+					mMediaController.setProgress();
 				} else {
 					// for image- or text-only frames
 					mNonAudioOffset = actualPos;
@@ -629,16 +957,8 @@ public class NarrativePlayerActivity extends MediaPhoneActivity {
 					mMediaPlayer.start();
 					mMediaController.setProgress();
 				}
-			} else if (pos >= 0 && pos < mNarrativeDuration) {
-				FrameMediaContainer newContainer = getMediaContainer(pos, true);
-				if (newContainer != mCurrentFrameContainer) {
-					mCurrentFrameContainer = newContainer;
-					prepareMediaItems(mCurrentFrameContainer);
-					mInitialPlaybackOffset = pos - mPlaybackPosition;
-				} else {
-					mIsLoading = false;
-				}
 			}
+
 		}
 
 		@Override
@@ -683,6 +1003,7 @@ public class NarrativePlayerActivity extends MediaPhoneActivity {
 	};
 
 	private class TouchCallbackCustomMediaController extends CustomMediaController {
+
 		private TouchCallbackCustomMediaController(Context context) {
 			super(context);
 		}
@@ -700,19 +1021,72 @@ public class NarrativePlayerActivity extends MediaPhoneActivity {
 	}
 
 	private void startPlayers() {
-		// so that we don't start playing after pause if we were loading
+
 		if (mIsLoading) {
-			for (Integer soundId : mFrameSounds) {
-				mSoundPool.play(soundId, 1, 1, 1, 0, 1f); // volume is % of *current*, rather than maximum
-				// TODO: seek to mInitialPlaybackOffset
+			if (!mPlayFromFrameEditor) {
+				if (mFrameSounds.size() == 0) {
+					mediaVolume = fVolume1;
+				}
+				// @Haiyue
+				// Transfer volume for media player
+				if (mediaIndex == 0) {
+					mediaVolume = cVolume1;
+
+					volume1 = (float) (1 - (Math.log(15 - cVolume2) / Math.log(15)));
+					volume2 = (float) (1 - (Math.log(15 - cVolume3) / Math.log(15)));
+				} else if (mediaIndex == 1) {
+					mediaVolume = cVolume2;
+					volume1 = (float) (1 - (Math.log(15 - cVolume1) / Math.log(15)));
+					volume2 = (float) (1 - (Math.log(15 - cVolume3) / Math.log(15)));
+				} else if (mediaIndex == 2) {
+					mediaVolume = cVolume3;
+					volume1 = (float) (1 - (Math.log(15 - cVolume1) / Math.log(15)));
+
+					volume2 = (float) (1 - (Math.log(15 - cVolume2) / Math.log(15)));
+
+				}
+			} else if (mPlayFromFrameEditor) {
+
+				if (mFrameSounds.size() == 0) {
+					mediaVolume = fVolume1;
+				}
+				if (mediaIndex == 0) {
+					mediaVolume = fVolume1;
+					volume1 = (float) (1 - (Math.log(15 - fVolume2) / Math.log(15)));
+					volume2 = (float) (1 - (Math.log(15 - fVolume3) / Math.log(15)));
+				} else if (mediaIndex == 1) {
+					mediaVolume = fVolume2;
+
+					volume1 = (float) (1 - (Math.log(15 - fVolume1) / Math.log(15)));
+
+					volume2 = (float) (1 - (Math.log(15 - fVolume3) / Math.log(15)));
+
+				} else if (mediaIndex == 2) {
+					mediaVolume = fVolume3;
+
+					volume1 = (float) (1 - (Math.log(15 - fVolume1) / Math.log(15)));
+
+					volume2 = (float) (1 - (Math.log(15 - fVolume2) / Math.log(15)));
+
+				}
+
 			}
 
 			mMediaPlayer.setOnCompletionListener(mMediaPlayerCompletionListener);
 			mPlaybackStartTime = System.currentTimeMillis() - mInitialPlaybackOffset;
 			mMediaPlayer.seekTo(mInitialPlaybackOffset);
 			mMediaPlayer.start();
+			mMediaPlayer2.start();
+			mMediaPlayer3.start();
 
+			// @Haiyue
+			// set sound volume with longest duration for each narrative
+			final float volume = (float) (1 - (Math.log(15 - mediaVolume) / Math.log(15)));
+			mMediaPlayer.setVolume(volume, volume);
+			mMediaPlayer2.setVolume(volume1, volume1);
+			mMediaPlayer3.setVolume(volume2, volume2);
 			mIsLoading = false;
+			mPlayFromFrameEditor = false;
 			mMediaController.setMediaPlayer(mMediaPlayerController);
 
 			UIUtilities.acquireKeepScreenOn(getWindow());
@@ -726,7 +1100,7 @@ public class NarrativePlayerActivity extends MediaPhoneActivity {
 			if (mFrameSounds.size() >= mNumExtraSounds) {
 				mSoundPoolPrepared = true;
 			}
-			if (mSoundPoolPrepared && mMediaPlayerPrepared) {
+			if (mSoundPoolPrepared) {// && mMediaPlayerPrepared) {
 				startPlayers();
 			}
 		}
@@ -748,6 +1122,7 @@ public class NarrativePlayerActivity extends MediaPhoneActivity {
 			if (mMediaPlayerError) {
 				// releasePlayer(); // don't do this, as it means the player will be null; instead we resume from errors
 				mCurrentFrameContainer = getMediaContainer(mPlaybackPosition, false);
+
 				prepareMediaItems(mCurrentFrameContainer);
 				mMediaPlayerError = false;
 				return;
@@ -776,4 +1151,78 @@ public class NarrativePlayerActivity extends MediaPhoneActivity {
 			return false; // not handled -> onCompletionListener will be called
 		}
 	};
+
+	// @Haiyue
+	// onTouch events for zoom in/out the image
+	public boolean onTouch(View v, MotionEvent event) {
+
+		ImageView view = (ImageView) v;
+
+		switch (event.getAction() & MotionEvent.ACTION_MASK) {
+			case MotionEvent.ACTION_DOWN:
+				showMediaController(CustomMediaController.DEFAULT_VISIBILITY_TIMEOUT);
+				savedMatrix.set(matrix);
+				start.set(event.getX(), event.getY());
+				mode = DRAG;
+				break;
+
+			case MotionEvent.ACTION_POINTER_DOWN:
+				oldDist = spacing(event);
+				if (oldDist > 10f) {
+					savedMatrix.set(matrix);
+					midPoint(mid, event);
+					mode = ZOOM;
+				}
+				break;
+
+			case MotionEvent.ACTION_UP:
+
+			case MotionEvent.ACTION_POINTER_UP:
+				mode = NONE;
+				break;
+
+			case MotionEvent.ACTION_MOVE:
+				if (mode == DRAG) {
+					matrix.set(savedMatrix);
+					matrix.postTranslate(event.getX() - start.x, event.getY() - start.y);
+				} else if (mode == ZOOM) {
+					float newDist = spacing(event);
+					if (newDist > 10f) {
+						matrix.set(savedMatrix);
+						float scale = newDist / oldDist;
+						matrix.postScale(scale, scale, mid.x, mid.y);
+					}
+				}
+				break;
+		}
+		view.setImageMatrix(matrix);
+		return true; // indicate event was handled
+	}
+
+	// @Haiyue
+	// Determine the space between the first two fingers
+	private float spacing(MotionEvent event) {
+		float x = event.getX(0) - event.getX(1);
+		float y = event.getY(0) - event.getY(1);
+		return FloatMath.sqrt(x * x + y * y);
+	}
+
+	// @Haiyue
+	// Calculate the mid point of the first two fingers
+	private void midPoint(PointF point, MotionEvent event) {
+		float x = event.getX(0) + event.getX(1);
+		float y = event.getY(0) + event.getY(1);
+		point.set(x / 2, y / 2);
+	}
+
+	// @Haiyue
+	// reset image size, position
+	private void resetZoom() {
+		matrix.reset();
+		savedMatrix.reset();
+		start.set(0.0f, 0.0f);
+		mid.set(0.0f, 0.0f);
+		photoDisplay.setScaleType(ScaleType.CENTER_INSIDE);
+		// photoDisplay.setScaleType(ScaleType.FIT_CENTER);
+	}
 }

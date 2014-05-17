@@ -20,7 +20,7 @@
 
 package ac.robinson.mediaphone.view;
 
-import ac.robinson.mediaphone.R;
+import ac.robinson.musicphone.R;
 import ac.robinson.mediaphone.activity.AudioActivity.PathAndStateSavingMediaRecorder;
 import android.content.Context;
 import android.graphics.Bitmap;

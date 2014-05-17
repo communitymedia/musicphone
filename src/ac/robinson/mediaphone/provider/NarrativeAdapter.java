@@ -23,7 +23,7 @@ package ac.robinson.mediaphone.provider;
 import java.util.HashMap;
 
 import ac.robinson.mediaphone.BrowserActivity;
-import ac.robinson.mediaphone.R;
+import ac.robinson.musicphone.R;
 import ac.robinson.mediaphone.view.HorizontalListView;
 import ac.robinson.mediaphone.view.NarrativeViewHolder;
 import android.content.Context;

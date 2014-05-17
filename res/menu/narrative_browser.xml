@@ -2,6 +2,21 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android" >
 
     <item
+        android:id="@+id/menu_dropbox_setup"
+        android:icon="@android:drawable/ic_menu_search"
+        android:showAsAction="never"
+        android:title="@string/menu_dropbox_setup"/>
+    <item
+        android:id="@+id/choose_dropbox_folder"
+        android:icon="@android:drawable/ic_menu_search"
+        android:showAsAction="never"
+        android:title="@string/choose_dropbox_folder"/>
+    <item
+        android:id="@+id/menu_scan_imports_dropbox"
+        android:icon="@android:drawable/ic_menu_search"
+        android:showAsAction="never"
+        android:title="@string/menu_scan_imports_dropbox"/>
+    <item
         android:id="@+id/menu_add_narrative"
         android:icon="@android:drawable/ic_menu_add"
         android:showAsAction="ifRoom|withText"
