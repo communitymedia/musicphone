@@ -28,7 +28,6 @@ import java.util.Date;
 
 import ac.robinson.mediaphone.MediaPhone;
 import ac.robinson.mediaphone.MediaPhoneActivity;
-import ac.robinson.musicphone.R;
 import ac.robinson.mediaphone.addon.CustomMediaController;
 import ac.robinson.mediaphone.provider.FrameItem;
 import ac.robinson.mediaphone.provider.FramesManager;
@@ -36,6 +35,7 @@ import ac.robinson.mediaphone.provider.MediaPhoneProvider;
 import ac.robinson.mediaphone.provider.NarrativeItem;
 import ac.robinson.mediaphone.provider.NarrativesManager;
 import ac.robinson.mediautilities.FrameMediaContainer;
+import ac.robinson.musicphone.R;
 import ac.robinson.util.BitmapUtilities;
 import ac.robinson.util.DebugUtilities;
 import ac.robinson.util.IOUtilities;
@@ -674,104 +674,6 @@ public class NarrativePlayerActivity extends MediaPhoneActivity implements OnTou
 		}
 	}
 
-	// @Haiyue
-	// Do the preparation for audio items and audio sync
-	private void prepareAudioItems(String FrameId, Resources res) {
-
-		// String currentAudioItem = null;
-		// String currentAudioItem2 = null;
-		// String currentAudioItem3 = null;
-
-		SharedPreferences outAudioItem = getSharedPreferences(FrameId, 0);
-		currentAudioItem = outAudioItem.getString("audioitem", null);
-		currentAudioItem2 = outAudioItem.getString("audioitem1", null);
-		currentAudioItem3 = outAudioItem.getString("audioitem2", null);
-
-		FileInputStream playerInputStream = null;
-		FileInputStream playerInputStream2 = null;
-		FileInputStream playerInputStream3 = null;
-		mSilenceFilePlaying = false;
-		boolean dataLoaded = false;
-		int dataLoadingErrorCount = 0;
-		mSilencePlay = false;
-		while (!dataLoaded && dataLoadingErrorCount <= 2) {
-			try {
-				mMediaPlayer.reset();
-				mMediaPlayer2.reset();
-				mMediaPlayer3.reset();
-
-				if (currentAudioItem == null || (!(new File(currentAudioItem).exists()))) {
-					Log.d("test", "no audio");
-					mSilenceFilePlaying = true;
-					if (mSilenceFileDescriptor == null) {
-						mSilenceFileDescriptor = res.openRawResourceFd(R.raw.silence_100ms);
-					}
-					mMediaPlayer.setDataSource(mSilenceFileDescriptor.getFileDescriptor(),
-							mSilenceFileDescriptor.getStartOffset(), mSilenceFileDescriptor.getDeclaredLength());
-				} else {
-					// can't play from data directory (they're private; permissions don't work), must use an input
-					// stream - original was: mMediaPlayer.setDataSource(currentAudioItem);
-					Log.d("test", "audio");
-					playerInputStream = new FileInputStream(new File(currentAudioItem));
-					mMediaPlayer.setDataSource(playerInputStream.getFD());
-					if (currentAudioItem2 != null) {
-						playerInputStream2 = new FileInputStream(new File(currentAudioItem2));
-						mMediaPlayer2.setDataSource(playerInputStream2.getFD());
-					}
-					if (currentAudioItem3 != null) {
-						playerInputStream3 = new FileInputStream(new File(currentAudioItem3));
-						mMediaPlayer3.setDataSource(playerInputStream3.getFD());
-					}
-				}
-				dataLoaded = true;
-			} catch (Throwable t) {
-				// sometimes setDataSource fails for mysterious reasons - loop to open it, rather than failing
-				dataLoaded = false;
-				dataLoadingErrorCount += 1;
-			} finally {
-				IOUtilities.closeStream(playerInputStream);
-				// IOUtilities.closeStream(playerInputStream2);
-			}
-		}
-
-		try {
-			if (dataLoaded) {
-				Log.d("start try", "audio");
-				Log.d("number of sounds", String.valueOf(mNumExtraSounds));
-				mMediaPlayer.setLooping(false);
-				mMediaPlayer.setAudioStreamType(AudioManager.STREAM_MUSIC);
-				mMediaPlayer2.setAudioStreamType(AudioManager.STREAM_MUSIC);
-				mMediaPlayer3.setAudioStreamType(AudioManager.STREAM_MUSIC);
-				mMediaPlayer.setOnPreparedListener(mMediaPlayerPreparedListener);
-				// mMediaPlayer.setOnCompletionListener(mMediaPlayerCompletionListener);
-				// done later - better pausing
-				mMediaPlayer.setOnErrorListener(mMediaPlayerErrorListener);
-				mMediaPlayer.prepareAsync();
-				switch (mNumExtraSounds) {
-				// case 0:
-				// mMediaPlayer.prepareAsync();
-				// break;
-					case 1:
-						// mMediaPlayer.prepareAsync();
-						mMediaPlayer2.prepareAsync();
-						break;
-					case 2:
-						// mMediaPlayer.prepareAsync();
-						mMediaPlayer2.prepareAsync();
-						mMediaPlayer3.prepareAsync();
-						break;
-				}
-			} else {
-				throw new IllegalStateException();
-			}
-
-		} catch (Throwable t) {
-			UIUtilities.showToast(NarrativePlayerActivity.this, R.string.error_loading_narrative_player);
-			onBackPressed();
-			return;
-		}
-	}
-
 	private void unloadSoundPool() {
 		for (Integer soundId : mFrameSounds) {
 			mSoundPool.stop(soundId);
@@ -946,19 +848,18 @@ public class NarrativePlayerActivity extends MediaPhoneActivity implements OnTou
 					mMediaPlayer3.seekTo(actualPos);
 					mMediaPlayer3.start();
 					mMediaController.setProgress();
-				} else {
-					// for image- or text-only frames
-					mNonAudioOffset = actualPos;
-					if (mMediaController.isDragging()) {
-						mMediaPlayer.setOnCompletionListener(mMediaPlayerCompletionListener);
-					}
-					mPlaybackStartTime = System.currentTimeMillis();
-					mMediaPlayer.seekTo(0); // TODO: seek others (is it even possible with soundpool?)
-					mMediaPlayer.start();
-					mMediaController.setProgress();
 				}
+			} else {
+				// for image- or text-only frames
+				mNonAudioOffset = actualPos;
+				if (mMediaController.isDragging()) {
+					mMediaPlayer.setOnCompletionListener(mMediaPlayerCompletionListener);
+				}
+				mPlaybackStartTime = System.currentTimeMillis();
+				mMediaPlayer.seekTo(0); // TODO: seek others (is it even possible with soundpool?)
+				mMediaPlayer.start();
+				mMediaController.setProgress();
 			}
-
 		}
 
 		@Override
