@@ -35,7 +35,7 @@
             android:title="@string/preferences_audio_to_media_title" />
     </PreferenceCategory>
     <PreferenceCategory android:title="@string/preferences_playback_export" >
-        <ac.robinson.musicphone.view.SeekBarPreference
+        <ac.robinson.mediaphone.view.SeekBarPreference
             android:defaultValue="@attr/default_minimum_frame_duration"
             android:key="@string/key_minimum_frame_duration"
             android:summary="@string/preferences_minimum_frame_duration_summary"
@@ -45,7 +45,7 @@
             seekbar:maxVal="@attr/minimum_frame_duration_max"
             seekbar:minVal="@attr/minimum_frame_duration_min"
             seekbar:prependUnits="" />
-        <ac.robinson.musicphone.view.SeekBarPreference
+        <ac.robinson.mediaphone.view.SeekBarPreference
             android:defaultValue="@attr/default_word_duration"
             android:key="@string/key_word_duration"
             android:summary="@string/preferences_word_duration_summary"
