@@ -268,7 +268,7 @@ public class MediaPhoneApplication extends Application {
 		}
 		if (!mImportingServiceIsBound) {
 			final Intent bindIntent = new Intent(MediaPhoneApplication.this, ImportingService.class);
-			bindIntent.putExtra(MediaUtilities.KEY_OBSERVER_CLASS, "ac.robinson.musicphone.importing.BluetoothObserver");
+			bindIntent.putExtra(MediaUtilities.KEY_OBSERVER_CLASS, "ac.robinson.mediaphone.importing.BluetoothObserver");
 			bindIntent.putExtra(MediaUtilities.KEY_OBSERVER_PATH, MediaPhone.IMPORT_DIRECTORY);
 			bindIntent.putExtra(MediaUtilities.KEY_OBSERVER_REQUIRE_BT, !watchWithoutBluetoothEnabled);
 			bindService(bindIntent, mConnection, Context.BIND_AUTO_CREATE);

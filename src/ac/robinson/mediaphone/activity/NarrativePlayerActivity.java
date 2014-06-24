@@ -55,7 +55,6 @@ import android.media.MediaPlayer;
 import android.media.MediaPlayer.OnCompletionListener;
 import android.media.MediaPlayer.OnErrorListener;
 import android.media.MediaPlayer.OnPreparedListener;
-import android.media.SoundPool;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -98,11 +97,8 @@ public class NarrativePlayerActivity extends MediaPhoneActivity implements OnTou
 	int bmpHeight;
 
 	private final int EXTRA_AUDIO_ITEMS = 2; // 3 audio items max, but only 2 for sound pool (other is in MediaPlayer)
-	private SoundPool mSoundPool;
 	private ArrayList<Integer> mFrameSounds;
 	private int mNumExtraSounds;
-	private boolean mMediaPlayerPrepared;
-	private boolean mSoundPoolPrepared;
 	private AssetFileDescriptor mSilenceFileDescriptor = null;
 	private AssetFileDescriptor mSilenceFileDescriptor2 = null;
 	private AssetFileDescriptor mSilenceFileDescriptor3 = null;
@@ -270,8 +266,7 @@ public class NarrativePlayerActivity extends MediaPhoneActivity implements OnTou
 	}
 
 	private void preparePlayback() {
-		if (mNarrativeContentList != null && mNarrativeContentList.size() > 0 && mMediaPlayer != null // && mSoundPool
-																										// != null
+		if (mNarrativeContentList != null && mNarrativeContentList.size() > 0 && mMediaPlayer != null
 				&& mMediaController != null && mPlaybackPosition >= 0) {
 			return; // no need to re-initialise
 		}
@@ -323,7 +318,6 @@ public class NarrativePlayerActivity extends MediaPhoneActivity implements OnTou
 
 		releasePlayer();
 		mMediaPlayer = new MediaPlayer();
-		mSoundPool = new SoundPool(EXTRA_AUDIO_ITEMS, AudioManager.STREAM_MUSIC, 100);
 		mFrameSounds = new ArrayList<Integer>();
 
 		mMediaPlayer2 = new MediaPlayer();
@@ -407,10 +401,11 @@ public class NarrativePlayerActivity extends MediaPhoneActivity implements OnTou
 					pauseMediaController();
 					// @Haiyue
 					// print using google cloud printer
-					if (mHasImage)
+					if (mHasImage) {
 						printThis();
-					else if (!mHasImage)
+					} else if (!mHasImage) {
 						UIUtilities.showToast(NarrativePlayerActivity.this, R.string.error_no_image_to_print);
+					}
 				}
 			});
 		}
@@ -463,11 +458,8 @@ public class NarrativePlayerActivity extends MediaPhoneActivity implements OnTou
 
 		// load the audio for the media player
 		Resources res = getResources();
-		mSoundPoolPrepared = false;
-		mMediaPlayerPrepared = false;
 		mMediaPlayerError = false;
 		mNonAudioOffset = 0;
-		// unloadSoundPool();
 
 		// @Haiyue
 		// (Play narrative from narrative browser)
@@ -477,30 +469,23 @@ public class NarrativePlayerActivity extends MediaPhoneActivity implements OnTou
 		cVolume2 = outputPrefs.getInt("volume2", -1);
 		cVolume3 = outputPrefs.getInt("volume3", -1);
 
-		if (cVolume1 == -1)
+		if (cVolume1 == -1) {
 			cVolume1 = 0;
-		if (cVolume2 == -1)
+		}
+		if (cVolume2 == -1) {
 			cVolume2 = 0;
-		if (cVolume3 == -1)
+		}
+		if (cVolume3 == -1) {
 			cVolume3 = 0;
+		}
 
-		mSoundPool.setOnLoadCompleteListener(mSoundPoolLoadListener);
-		mNumExtraSounds = 0;
-
-		boolean soundPoolAllowed = !DebugUtilities.hasSoundPoolBug();
-
-		for (int i = 0, n = container.mAudioDurations.size(); i < n; i++) {
+		mNumExtraSounds = container.mAudioDurations.size() - 1;
+		for (int i = 0, n = mNumExtraSounds + 1; i < n; i++) {
 			if (container.mAudioDurations.get(i).intValue() == container.mFrameMaxDuration) {
 				// @Haiyue
 				// remember which sound has longest duration for future playback
 				currentAudioItem = container.mAudioPaths.get(i);
 				mediaIndex = i;
-			} else {
-				// playing *anything* in SoundPool at the same time as MediaPlayer crashes on Galaxy Tab
-				if (soundPoolAllowed) {
-					mSoundPool.load(container.mAudioPaths.get(i), 1);
-					mNumExtraSounds += 1;
-				}
 			}
 		}
 		// @Haiyue
@@ -538,10 +523,6 @@ public class NarrativePlayerActivity extends MediaPhoneActivity implements OnTou
 				currentAudioItem2 = null;
 				currentAudioItem3 = null;
 			}
-		}
-
-		if (mNumExtraSounds == 0) {
-			mSoundPoolPrepared = true;
 		}
 
 		FileInputStream playerInputStream = null;
@@ -674,14 +655,6 @@ public class NarrativePlayerActivity extends MediaPhoneActivity implements OnTou
 		}
 	}
 
-	private void unloadSoundPool() {
-		for (Integer soundId : mFrameSounds) {
-			mSoundPool.stop(soundId);
-			mSoundPool.unload(soundId);
-		}
-		mFrameSounds.clear();
-	}
-
 	private void releasePlayer() {
 		UIUtilities.releaseKeepScreenOn(getWindow());
 		// release controller first, so we don't play to a null player
@@ -698,11 +671,6 @@ public class NarrativePlayerActivity extends MediaPhoneActivity implements OnTou
 			}
 			mMediaPlayer.release();
 			mMediaPlayer = null;
-		}
-		if (mSoundPool != null) {
-			unloadSoundPool();
-			mSoundPool.release();
-			mSoundPool = null;
 		}
 	}
 
@@ -721,14 +689,12 @@ public class NarrativePlayerActivity extends MediaPhoneActivity implements OnTou
 
 				prepareMediaItems(mCurrentFrameContainer);
 			} else {
-				if (mMediaPlayer != null // && mSoundPool != null
-				) {
+				if (mMediaPlayer != null) {
 					mMediaPlayer.setOnCompletionListener(mMediaPlayerCompletionListener);
 					mPlaybackStartTime = System.currentTimeMillis() - mMediaPlayer.getCurrentPosition();
 					mMediaPlayer.start();
 					mMediaPlayer2.start();
 					mMediaPlayer3.start();
-					// mSoundPool.autoResume(); // TODO: check this works
 					showMediaController(CustomMediaController.DEFAULT_VISIBILITY_TIMEOUT);
 				} else {
 					UIUtilities.showToast(NarrativePlayerActivity.this, R.string.error_loading_narrative_player);
@@ -856,8 +822,12 @@ public class NarrativePlayerActivity extends MediaPhoneActivity implements OnTou
 					mMediaPlayer.setOnCompletionListener(mMediaPlayerCompletionListener);
 				}
 				mPlaybackStartTime = System.currentTimeMillis();
-				mMediaPlayer.seekTo(0); // TODO: seek others (is it even possible with soundpool?)
+				mMediaPlayer.seekTo(0); // TODO: seek others
 				mMediaPlayer.start();
+				mMediaPlayer2.seekTo(0); // TODO: seek others
+				mMediaPlayer2.start();
+				mMediaPlayer3.seekTo(0); // TODO: seek others
+				mMediaPlayer3.start();
 				mMediaController.setProgress();
 			}
 		}
@@ -932,7 +902,6 @@ public class NarrativePlayerActivity extends MediaPhoneActivity implements OnTou
 				// Transfer volume for media player
 				if (mediaIndex == 0) {
 					mediaVolume = cVolume1;
-
 					volume1 = (float) (1 - (Math.log(15 - cVolume2) / Math.log(15)));
 					volume2 = (float) (1 - (Math.log(15 - cVolume3) / Math.log(15)));
 				} else if (mediaIndex == 1) {
@@ -942,12 +911,9 @@ public class NarrativePlayerActivity extends MediaPhoneActivity implements OnTou
 				} else if (mediaIndex == 2) {
 					mediaVolume = cVolume3;
 					volume1 = (float) (1 - (Math.log(15 - cVolume1) / Math.log(15)));
-
 					volume2 = (float) (1 - (Math.log(15 - cVolume2) / Math.log(15)));
-
 				}
 			} else if (mPlayFromFrameEditor) {
-
 				if (mFrameSounds.size() == 0) {
 					mediaVolume = fVolume1;
 				}
@@ -957,20 +923,13 @@ public class NarrativePlayerActivity extends MediaPhoneActivity implements OnTou
 					volume2 = (float) (1 - (Math.log(15 - fVolume3) / Math.log(15)));
 				} else if (mediaIndex == 1) {
 					mediaVolume = fVolume2;
-
 					volume1 = (float) (1 - (Math.log(15 - fVolume1) / Math.log(15)));
-
 					volume2 = (float) (1 - (Math.log(15 - fVolume3) / Math.log(15)));
-
 				} else if (mediaIndex == 2) {
 					mediaVolume = fVolume3;
-
 					volume1 = (float) (1 - (Math.log(15 - fVolume1) / Math.log(15)));
-
 					volume2 = (float) (1 - (Math.log(15 - fVolume2) / Math.log(15)));
-
 				}
-
 			}
 
 			mMediaPlayer.setOnCompletionListener(mMediaPlayerCompletionListener);
@@ -994,26 +953,10 @@ public class NarrativePlayerActivity extends MediaPhoneActivity implements OnTou
 		}
 	}
 
-	private SoundPool.OnLoadCompleteListener mSoundPoolLoadListener = new SoundPool.OnLoadCompleteListener() {
-		@Override
-		public void onLoadComplete(SoundPool soundPool, int sampleId, int status) {
-			mFrameSounds.add(sampleId);
-			if (mFrameSounds.size() >= mNumExtraSounds) {
-				mSoundPoolPrepared = true;
-			}
-			if (mSoundPoolPrepared) {// && mMediaPlayerPrepared) {
-				startPlayers();
-			}
-		}
-	};
-
 	private OnPreparedListener mMediaPlayerPreparedListener = new OnPreparedListener() {
 		@Override
 		public void onPrepared(MediaPlayer mp) {
-			mMediaPlayerPrepared = true;
-			if (mSoundPoolPrepared) {
-				startPlayers();
-			}
+			startPlayers();
 		}
 	};
 
